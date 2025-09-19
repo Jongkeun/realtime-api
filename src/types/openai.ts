@@ -2,7 +2,7 @@ export interface RealtimeAPIConfig {
   model: "gpt-4o-realtime-preview-2024-10-01";
   modalities: ["text", "audio"];
   instructions: string;
-  voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
+  voice: "alloy" | "echo" | "fable" | "onyx" | "shimmer" | "verse" | "marin" | "cedar";
   input_audio_format: "pcm16" | "g711_ulaw" | "g711_alaw";
   output_audio_format: "pcm16" | "g711_ulaw" | "g711_alaw";
   input_audio_transcription?: {

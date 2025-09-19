@@ -6,6 +6,7 @@ import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
 
 export default function HostPage() {
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [hostName, setHostName] = useState<string>("");
   const [isInitializing, setIsInitializing] = useState(false);
   const [connectionSteps, setConnectionSteps] = useState({
     audioReady: false,
@@ -19,6 +20,11 @@ export default function HostPage() {
 
   // 호스트 초기화
   const handleInitialize = async () => {
+    if (!hostName.trim()) {
+      alert("호스트 이름을 입력해주세요.");
+      return;
+    }
+
     setIsInitializing(true);
     setConnectionSteps((prev) => ({ ...prev, audioReady: false, aiConnected: false, roomCreated: false }));
 
@@ -29,7 +35,7 @@ export default function HostPage() {
         throw new Error(microphone.error || "마이크 권한이 필요합니다.");
       }
 
-      const createdRoomId = await voiceRelay.initializeAsHost();
+      const createdRoomId = await voiceRelay.initializeAsHost(hostName.trim());
       if (createdRoomId) {
         setRoomId(createdRoomId);
         setConnectionSteps((prev) => ({
@@ -119,9 +125,29 @@ export default function HostPage() {
               </div>
             </div>
 
+            {/* 호스트 이름 입력 */}
+            <div className="mb-6">
+              <label htmlFor="hostName" className="block text-sm font-medium text-gray-700 mb-2">
+                호스트 이름
+              </label>
+              <input
+                id="hostName"
+                type="text"
+                value={hostName}
+                onChange={(e) => setHostName(e.target.value)}
+                placeholder="게스트가 볼 수 있는 이름을 입력하세요"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isInitializing}
+                maxLength={20}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                최대 20자까지 입력 가능합니다
+              </p>
+            </div>
+
             <button
               onClick={handleInitialize}
-              disabled={isInitializing || microphone.isLoading}
+              disabled={isInitializing || microphone.isLoading || !hostName.trim()}
               className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 
                          text-white font-semibold py-3 px-6 rounded-lg transition-colors"
             >
@@ -283,6 +309,16 @@ export default function HostPage() {
             <li>3. 아이가 게스트로 접속하면 자동으로 연결됩니다</li>
             <li>4. 연결이 완료되면 아이와 AI의 실시간 대화가 시작됩니다</li>
           </ol>
+        </div>
+
+        {/* 네비게이션 */}
+        <div className="mt-6 text-center">
+          <a 
+            href="/" 
+            className="text-blue-600 hover:text-blue-800 text-sm underline"
+          >
+            ← 메인 페이지로 돌아가기
+          </a>
         </div>
       </div>
     </div>

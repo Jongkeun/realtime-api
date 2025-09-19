@@ -1,63 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import HostPage from "@/components/HostPage";
-import GuestPage from "@/components/GuestPage";
+import { useRouter } from "next/navigation";
 
 export default function HomePage() {
-  const [userType, setUserType] = useState<"none" | "host" | "guest">("none");
-  const [guestRoomId, setGuestRoomId] = useState("");
+  const router = useRouter();
 
   const handleSelectHost = () => {
-    setUserType("host");
+    router.push("/host");
   };
 
   const handleSelectGuest = () => {
-    if (!guestRoomId.trim()) {
-      alert("방 코드를 입력해주세요!");
-      return;
-    }
-    setUserType("guest");
+    router.push("/guest");
   };
-
-  const handleGoBack = () => {
-    setUserType("none");
-    setGuestRoomId("");
-  };
-
-  // 호스트 페이지
-  if (userType === "host") {
-    return (
-      <div>
-        <button
-          onClick={handleGoBack}
-          className="fixed top-4 left-4 bg-white shadow-lg hover:shadow-xl 
-                     px-4 py-2 rounded-lg font-medium text-gray-700 hover:text-gray-900 
-                     transition-all z-10"
-        >
-          ← 돌아가기
-        </button>
-        <HostPage />
-      </div>
-    );
-  }
-
-  // 게스트 페이지
-  if (userType === "guest") {
-    return (
-      <div>
-        <button
-          onClick={handleGoBack}
-          className="fixed top-4 left-4 bg-white shadow-lg hover:shadow-xl 
-                     px-4 py-2 rounded-lg font-medium text-gray-700 hover:text-gray-900 
-                     transition-all z-10"
-        >
-          ← 돌아가기
-        </button>
-        <GuestPage roomId={guestRoomId} />
-      </div>
-    );
-  }
 
   // 메인 선택 페이지
   return (
@@ -138,23 +92,8 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* 방 코드 입력 */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">방 코드 입력</label>
-                <input
-                  type="text"
-                  value={guestRoomId}
-                  onChange={(e) => setGuestRoomId(e.target.value)}
-                  placeholder="예: abc123"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg 
-                             focus:ring-2 focus:ring-purple-500 focus:border-transparent 
-                             text-center font-mono text-lg"
-                />
-              </div>
-
               <button
                 onClick={handleSelectGuest}
-                disabled={!guestRoomId.trim()}
                 className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 
                            disabled:from-gray-400 disabled:to-gray-400
                            text-white font-bold py-4 px-6 rounded-xl text-lg transition-all

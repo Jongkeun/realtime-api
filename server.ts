@@ -17,6 +17,16 @@ interface SocketData {
   role?: "host" | "guest";
   roomId?: string;
   openaiWs?: WebSocket;
+  hostName?: string; // 호스트 식별을 위한 이름
+}
+
+interface RoomInfo {
+  roomId: string;
+  hostSocketId: string;
+  hostName: string;
+  guestCount: number;
+  maxGuests: number;
+  createdAt: Date;
 }
 
 interface ServerToClientEvents {
@@ -26,14 +36,16 @@ interface ServerToClientEvents {
   "openai-message": (message: OpenAIMessage) => void;
   "user-joined": (socketId: string) => void;
   "user-left": (socketId: string) => void;
+  "room-list-updated": (rooms: RoomInfo[]) => void;
   offer: (offer: RTCSessionDescriptionInit, socketId: string) => void;
   answer: (answer: RTCSessionDescriptionInit, socketId: string) => void;
   "ice-candidate": (candidate: RTCIceCandidate, socketId: string) => void;
 }
 
 interface ClientToServerEvents {
-  "create-room": (callback: (response: { roomId: string }) => void) => void;
+  "create-room": (hostName: string, callback: (response: { roomId: string }) => void) => void;
   "join-room": (roomId: string, callback: (response: { success?: boolean; error?: string }) => void) => void;
+  "get-room-list": (callback: (response: { rooms: RoomInfo[] }) => void) => void;
   "connect-openai": (callback: (response: { success?: boolean; error?: string }) => void) => void;
   "disconnect-openai": () => void;
   "send-openai-message": (message: OpenAIMessage) => void;
@@ -79,7 +91,7 @@ class OpenAIRealtimeConnection {
             type: "session.update",
             session: {
               instructions: "당신은 도움이 되는 AI 어시스턴트입니다. 자연스럽고 친근하게 대화해주세요.",
-              voice: "nova",
+              voice: "shimmer",
               input_audio_format: "pcm16",
               output_audio_format: "pcm16",
               turn_detection: {
@@ -167,26 +179,96 @@ app.prepare().then(() => {
 
   // 연결된 OpenAI 인스턴스들을 관리
   const openaiConnections = new Map<string, OpenAIRealtimeConnection>();
+  
+  // 활성 방 목록 관리
+  const activeRooms = new Map<string, RoomInfo>();
+
+  // 테스트용 더미 방 추가 (개발 중에만 사용)
+  if (IS_DEVELOPMENT) {
+    const testRoom: RoomInfo = {
+      roomId: "test123",
+      hostSocketId: "test-host-socket",
+      hostName: "테스트 호스트",
+      guestCount: 0,
+      maxGuests: 1,
+      createdAt: new Date(),
+    };
+    activeRooms.set("test123", testRoom);
+    console.log("🧪 개발용 테스트 방 생성됨:", testRoom.roomId);
+  }
+
+  // 방 목록을 모든 클라이언트에 브로드캐스트
+  function broadcastRoomList() {
+    const rooms = Array.from(activeRooms.values());
+    io.emit("room-list-updated", rooms);
+  }
+
+  // 방 정보 업데이트
+  function updateRoomInfo(roomId: string) {
+    const room = io.sockets.adapter.rooms.get(roomId);
+    const roomInfo = activeRooms.get(roomId);
+    
+    if (room && roomInfo) {
+      roomInfo.guestCount = room.size - 1; // 호스트 제외한 게스트 수
+      broadcastRoomList();
+    }
+  }
 
   // WebRTC 시그널링 및 OpenAI 처리
   io.on("connection", (socket) => {
     console.log("클라이언트 연결:", socket.id);
 
+    // 방 목록 요청
+    socket.on("get-room-list", (callback?: (response: { rooms: RoomInfo[] }) => void) => {
+      console.log("get-room-list 이벤트 수신, hasCallback:", !!callback);
+      
+      if (typeof callback !== 'function') {
+        console.error("get-room-list callback이 함수가 아님:", typeof callback);
+        return;
+      }
+      
+      const rooms = Array.from(activeRooms.values());
+      callback({ rooms });
+    });
+
     // 룸 생성
-    socket.on("create-room", (callback: (response: { roomId: string }) => void) => {
+    socket.on("create-room", (hostName: string, callback?: (response: { roomId: string }) => void) => {
+      console.log("create-room 이벤트 수신:", { hostName, hasCallback: !!callback });
+      
+      if (typeof callback !== 'function') {
+        console.error("callback이 함수가 아님:", typeof callback);
+        return;
+      }
+      
       const roomId = Math.random().toString(36).substring(7);
       socket.join(roomId);
       socket.data.role = "host";
       socket.data.roomId = roomId;
+      socket.data.hostName = hostName;
+      
+      // 방 정보 등록
+      const roomInfo: RoomInfo = {
+        roomId,
+        hostSocketId: socket.id,
+        hostName,
+        guestCount: 0,
+        maxGuests: 1,
+        createdAt: new Date(),
+      };
+      
+      activeRooms.set(roomId, roomInfo);
+      broadcastRoomList();
+      
       callback({ roomId });
-      console.log(`호스트가 룸 생성: ${roomId}`);
+      console.log(`호스트가 룸 생성: ${roomId} (${hostName})`);
     });
 
     // 룸 참여
     socket.on("join-room", (roomId: string, callback: (response: { success?: boolean; error?: string }) => void) => {
       const room = io.sockets.adapter.rooms.get(roomId);
+      const roomInfo = activeRooms.get(roomId);
 
-      if (!room) {
+      if (!room || !roomInfo) {
         callback({ error: "존재하지 않는 룸입니다" });
         return;
       }
@@ -201,19 +283,25 @@ app.prepare().then(() => {
       socket.data.role = "guest";
       socket.data.roomId = roomId;
       socket.to(roomId).emit("user-joined", socket.id);
+      
+      // 방 정보 업데이트
+      updateRoomInfo(roomId);
+      
       callback({ success: true });
-      console.log(`게스트가 룸 참여: ${roomId}`);
+      console.log(`게스트가 룸 참여: ${roomId} (${roomInfo.hostName})`);
     });
 
     // WebRTC 시그널링
     socket.on("offer", (offer: RTCSessionDescriptionInit, targetSocketId: string) => {
+      console.log(`Offer 수신: ${socket.id} -> ${targetSocketId}`);
       socket.to(targetSocketId).emit("offer", offer, socket.id);
-      console.log("Offer 전송");
+      console.log(`Offer 전송 완료: ${socket.id} -> ${targetSocketId}`);
     });
 
     socket.on("answer", (answer: RTCSessionDescriptionInit, targetSocketId: string) => {
+      console.log(`Answer 수신: ${socket.id} -> ${targetSocketId}`);
       socket.to(targetSocketId).emit("answer", answer, socket.id);
-      console.log("Answer 전송");
+      console.log(`Answer 전송 완료: ${socket.id} -> ${targetSocketId}`);
     });
 
     socket.on("ice-candidate", (candidate: RTCIceCandidate, targetSocketId: string) => {
@@ -268,6 +356,15 @@ app.prepare().then(() => {
 
       if (socket.data.roomId) {
         socket.to(socket.data.roomId).emit("user-left", socket.id);
+        
+        // 호스트가 나가면 방 삭제, 게스트가 나가면 방 정보만 업데이트
+        if (socket.data.role === "host") {
+          activeRooms.delete(socket.data.roomId);
+          console.log(`방 삭제됨: ${socket.data.roomId}`);
+          broadcastRoomList();
+        } else if (socket.data.role === "guest") {
+          updateRoomInfo(socket.data.roomId);
+        }
       }
     });
   });
