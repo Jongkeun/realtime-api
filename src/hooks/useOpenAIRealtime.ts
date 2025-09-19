@@ -1,249 +1,257 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import type { RealtimeEvent, SessionConfig } from '@/types/openai'
-import { CHILD_FRIENDLY_INSTRUCTIONS } from '@/types/openai'
+import { useEffect, useRef, useState, useCallback } from "react";
+import { io, Socket } from "socket.io-client";
 
-// OpenAI Realtime API 설정 상수
-const REALTIME_API_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01'
-const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || ''
-
-const DEFAULT_SESSION_CONFIG: SessionConfig = {
-  modalities: ['text', 'audio'],
-  instructions: CHILD_FRIENDLY_INSTRUCTIONS,
-  voice: 'nova', // 아이들에게 친근한 목소리
-  input_audio_format: 'pcm16',
-  output_audio_format: 'pcm16',
-  input_audio_transcription: {
-    model: 'whisper-1'
-  },
-  turn_detection: {
-    type: 'server_vad',
-    threshold: 0.5,
-    prefix_padding_ms: 300,
-    silence_duration_ms: 500
-  },
-  temperature: 0.8,
-  max_response_output_tokens: 'inf'
+interface OpenAIMessage {
+  type: string;
+  [key: string]: unknown;
 }
 
 interface RealtimeState {
-  isConnected: boolean
-  isSessionActive: boolean
-  lastError: string | null
-  conversationId: string | null
+  isConnected: boolean;
+  isSessionActive: boolean;
+  lastError: string | null;
+  conversationId: string | null;
 }
 
 export function useOpenAIRealtime() {
-  const wsRef = useRef<WebSocket | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
+  const socketRef = useRef<Socket | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>({
     isConnected: false,
     isSessionActive: false,
     lastError: null,
-    conversationId: null
-  })
+    conversationId: null,
+  });
 
-  // WebSocket 연결 초기화
+  // Socket.IO를 통한 OpenAI Realtime API 연결
   const connectToOpenAI = useCallback(async () => {
-    if (!OPENAI_API_KEY) {
-      const errorMessage = 'OpenAI API 키가 설정되지 않았습니다'
-      setRealtimeState(prev => ({
-        ...prev,
-        lastError: errorMessage
-      }))
-      console.error(errorMessage)
-      return false
-    }
-
     try {
-      const websocket = new WebSocket(REALTIME_API_URL, ['realtime', 'json'])
-      
-      // 인증 헤더는 WebSocket 연결 시 추가할 수 없으므로 연결 후 첫 메시지에 포함
-      websocket.addEventListener('open', () => {
-        console.log('OpenAI Realtime API 연결 성공')
-        setRealtimeState(prev => ({
+      // Socket.IO 서버에 연결
+      const socket = io("http://localhost:3000");
+
+      socket.on("connect", () => {
+        console.log("Socket.IO 서버에 연결됨");
+
+        // OpenAI 연결 요청
+        socket.emit("connect-openai", (response: { success?: boolean; error?: string }) => {
+          if (response.success) {
+            console.log("OpenAI Realtime API 연결 요청 성공");
+          } else {
+            console.error("OpenAI 연결 실패:", response.error);
+            setRealtimeState((prev) => ({
+              ...prev,
+              lastError: response.error || "연결 실패",
+              isConnected: false,
+              isSessionActive: false,
+            }));
+          }
+        });
+      });
+
+      // OpenAI 연결 성공 이벤트
+      socket.on("openai-connected", () => {
+        console.log("OpenAI Realtime API에 연결됨");
+        setRealtimeState((prev) => ({
           ...prev,
           isConnected: true,
-          lastError: null
-        }))
-        
-        // 세션 설정
-        const sessionUpdateEvent: RealtimeEvent = {
-          type: 'session.update',
-          session: DEFAULT_SESSION_CONFIG
-        }
-        websocket.send(JSON.stringify(sessionUpdateEvent))
-      })
+          isSessionActive: true,
+          lastError: null,
+          conversationId: "connected",
+        }));
+      });
 
-      websocket.addEventListener('message', (event) => {
-        try {
-          const data: RealtimeEvent = JSON.parse(event.data)
-          handleRealtimeEvent(data)
-        } catch (error) {
-          console.error('메시지 파싱 오류:', error)
-        }
-      })
+      // OpenAI 메시지 수신
+      socket.on("openai-message", (message: OpenAIMessage) => {
+        console.log("OpenAI 메시지 수신:", message.type);
 
-      websocket.addEventListener('close', (event) => {
-        console.log('OpenAI 연결 종료:', event.code, event.reason)
-        setRealtimeState(prev => ({
+        // 다양한 이벤트 타입 처리
+        switch (message.type) {
+          case "conversation.item.created":
+          case "conversation.item.completed":
+            console.log("대화 이벤트:", message);
+            break;
+          case "response.audio.delta":
+            // 오디오 데이터 처리
+            if (message.delta) {
+              console.log("오디오 델타 수신");
+            }
+            break;
+          case "error":
+            console.error("서버 오류:", message.error);
+            break;
+        }
+      });
+
+      // OpenAI 오류 이벤트
+      socket.on("openai-error", (error: string) => {
+        console.error("OpenAI 오류:", error);
+        setRealtimeState((prev) => ({
+          ...prev,
+          lastError: error,
+          isConnected: false,
+          isSessionActive: false,
+        }));
+      });
+
+      // OpenAI 연결 해제 이벤트
+      socket.on("openai-disconnected", () => {
+        console.log("OpenAI 연결 해제됨");
+        setRealtimeState((prev) => ({
           ...prev,
           isConnected: false,
-          isSessionActive: false
-        }))
-      })
+          isSessionActive: false,
+        }));
+      });
 
-      websocket.addEventListener('error', (error) => {
-        console.error('OpenAI 연결 오류:', error)
-        setRealtimeState(prev => ({
+      socket.on("disconnect", () => {
+        console.log("Socket.IO 서버 연결 해제됨");
+        setRealtimeState((prev) => ({
           ...prev,
-          lastError: 'OpenAI 연결에 실패했습니다',
-          isConnected: false
-        }))
-      })
+          isConnected: false,
+          isSessionActive: false,
+        }));
+      });
 
-      wsRef.current = websocket
-      return true
+      socketRef.current = socket;
+      return true;
     } catch (error) {
-      console.error('OpenAI 연결 실패:', error)
-      setRealtimeState(prev => ({
+      console.error("연결 실패:", error);
+      setRealtimeState((prev) => ({
         ...prev,
-        lastError: '연결 초기화에 실패했습니다'
-      }))
-      return false
+        lastError: error instanceof Error ? error.message : "연결 초기화에 실패했습니다",
+        isConnected: false,
+        isSessionActive: false,
+      }));
+      return false;
     }
-  }, [])
-
-  // Realtime API 이벤트 처리
-  const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
-    console.log('Realtime 이벤트:', event.type)
-
-    switch (event.type) {
-      case 'session.created':
-        setRealtimeState(prev => ({
-          ...prev,
-          isSessionActive: true,
-          conversationId: event.session?.id || null
-        }))
-        console.log('세션 생성됨:', event.session?.id)
-        break
-
-      case 'session.updated':
-        console.log('세션 업데이트됨')
-        break
-
-      case 'error':
-        setRealtimeState(prev => ({
-          ...prev,
-          lastError: event.error?.message || 'OpenAI API 오류'
-        }))
-        console.error('OpenAI 오류:', event.error)
-        break
-
-      case 'response.audio.delta':
-        // 오디오 응답 스트리밍 처리
-        handleAudioResponse(event.delta)
-        break
-
-      case 'response.text.done':
-        console.log('텍스트 응답 완료:', event.text)
-        break
-
-      case 'conversation.item.input_audio_transcription.completed':
-        console.log('음성 인식 완료:', event.transcript)
-        break
-
-      default:
-        // 기타 이벤트 로깅
-        break
-    }
-  }, [])
-
-  // 오디오 응답 처리
-  const handleAudioResponse = useCallback((audioDelta: string) => {
-    // base64 오디오 데이터를 AudioBuffer로 변환하여 재생
-    // 이 부분은 실제 오디오 재생 로직 구현 필요
-    console.log('오디오 응답 수신, 길이:', audioDelta.length)
-  }, [])
+  }, []);
 
   // 오디오 데이터 전송
-  const sendAudioData = useCallback((audioData: ArrayBuffer) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('WebSocket이 연결되어 있지 않습니다')
-      return
-    }
-
-    // PCM16 오디오를 base64로 인코딩
-    const base64Audio = arrayBufferToBase64(audioData)
-    
-    const audioEvent: RealtimeEvent = {
-      type: 'input_audio_buffer.append',
-      audio: base64Audio
-    }
-
-    wsRef.current.send(JSON.stringify(audioEvent))
-  }, [])
-
-  // 대화 시작
-  const startConversation = useCallback(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('OpenAI에 연결되어 있지 않습니다')
-      return
-    }
-
-    const commitEvent: RealtimeEvent = {
-      type: 'input_audio_buffer.commit'
-    }
-
-    const responseEvent: RealtimeEvent = {
-      type: 'response.create',
-      response: {
-        modalities: ['text', 'audio'],
-        instructions: '아이와 친근하게 대화해주세요.'
+  const sendAudioData = useCallback(
+    (audioData: ArrayBuffer) => {
+      const socket = socketRef.current;
+      if (!socket || !realtimeState.isConnected) {
+        console.warn("Socket.IO가 연결되어 있지 않습니다");
+        return;
       }
+
+      // ArrayBuffer를 base64로 인코딩하여 전송
+      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioData)));
+      const message: OpenAIMessage = {
+        type: "input_audio_buffer.append",
+        audio: base64Audio,
+      };
+
+      socket.emit("send-openai-message", message);
+    },
+    [realtimeState.isConnected],
+  );
+
+  // 대화 시작 (응답 생성 요청)
+  const startConversation = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || !realtimeState.isConnected) {
+      console.warn("Socket.IO가 연결되어 있지 않습니다");
+      return;
     }
 
-    wsRef.current.send(JSON.stringify(commitEvent))
-    wsRef.current.send(JSON.stringify(responseEvent))
-  }, [])
+    // 입력 오디오 커밋 및 응답 생성 요청
+    const commitMessage: OpenAIMessage = {
+      type: "input_audio_buffer.commit",
+    };
+
+    const responseMessage: OpenAIMessage = {
+      type: "response.create",
+    };
+
+    socket.emit("send-openai-message", commitMessage);
+    socket.emit("send-openai-message", responseMessage);
+  }, [realtimeState.isConnected]);
+
+  // 텍스트 메시지 전송
+  const sendTextMessage = useCallback(
+    (text: string) => {
+      const socket = socketRef.current;
+      if (!socket || !realtimeState.isConnected) {
+        console.warn("Socket.IO가 연결되어 있지 않습니다");
+        return;
+      }
+
+      const message: OpenAIMessage = {
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: text,
+            },
+          ],
+        },
+      };
+
+      socket.emit("send-openai-message", message);
+
+      // 응답 생성 요청
+      const responseMessage: OpenAIMessage = {
+        type: "response.create",
+      };
+
+      socket.emit("send-openai-message", responseMessage);
+    },
+    [realtimeState.isConnected],
+  );
 
   // 연결 해제
   const disconnect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
+    const socket = socketRef.current;
+    if (socket) {
+      try {
+        socket.emit("disconnect-openai");
+        socket.disconnect();
+      } catch (error) {
+        console.error("Socket.IO 연결 해제 중 오류:", error);
+      }
+      socketRef.current = null;
     }
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-  }, [])
+
+    setRealtimeState({
+      isConnected: false,
+      isSessionActive: false,
+      lastError: null,
+      conversationId: null,
+    });
+  }, []);
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
-      disconnect()
-    }
-  }, [disconnect])
+      const socket = socketRef.current;
+      if (socket) {
+        try {
+          socket.emit("disconnect-openai");
+          socket.disconnect();
+        } catch (error) {
+          console.error("Socket.IO 연결 해제 중 오류:", error);
+        }
+        socketRef.current = null;
+      }
+
+      setRealtimeState({
+        isConnected: false,
+        isSessionActive: false,
+        lastError: null,
+        conversationId: null,
+      });
+    };
+  }, []);
 
   return {
     ...realtimeState,
     connectToOpenAI,
     sendAudioData,
+    sendTextMessage,
     startConversation,
-    disconnect
-  }
-}
-
-// ArrayBuffer를 base64로 변환하는 유틸리티 함수
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  const chunkSize = 0x8000 // 32KB 청크로 처리
-  let base64 = ''
-  
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize)
-    base64 += btoa(String.fromCharCode.apply(null, Array.from(chunk)))
-  }
-  
-  return base64
+    disconnect,
+  };
 }

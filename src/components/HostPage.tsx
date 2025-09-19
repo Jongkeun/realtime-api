@@ -6,6 +6,7 @@ import { useVoiceRelay } from '@/hooks/useVoiceRelay'
 export default function HostPage() {
   const [roomId, setRoomId] = useState<string | null>(null)
   const [isInitializing, setIsInitializing] = useState(false)
+  const [microphonePermission, setMicrophonePermission] = useState<'granted' | 'denied' | 'prompt'>('prompt')
   const [connectionSteps, setConnectionSteps] = useState({
     audioReady: false,
     aiConnected: false,
@@ -15,12 +16,41 @@ export default function HostPage() {
 
   const voiceRelay = useVoiceRelay()
 
+  // 마이크 권한 확인
+  useEffect(() => {
+    checkMicrophonePermission()
+  }, [])
+
+  const checkMicrophonePermission = async () => {
+    try {
+      const permission = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+      setMicrophonePermission(permission.state)
+      
+      permission.onchange = () => {
+        setMicrophonePermission(permission.state)
+      }
+    } catch (error) {
+      console.log('권한 확인 실패:', error)
+    }
+  }
+
   // 호스트 초기화
   const handleInitialize = async () => {
     setIsInitializing(true)
     setConnectionSteps(prev => ({ ...prev, audioReady: false, aiConnected: false, roomCreated: false }))
 
     try {
+      // 마이크 권한 먼저 요청
+      if (microphonePermission !== 'granted') {
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true })
+          setMicrophonePermission('granted')
+        } catch (error) {
+          setMicrophonePermission('denied')
+          throw new Error('마이크 권한이 필요합니다')
+        }
+      }
+
       const createdRoomId = await voiceRelay.initializeAsHost()
       if (createdRoomId) {
         setRoomId(createdRoomId)
@@ -49,7 +79,7 @@ export default function HostPage() {
         voiceRelay.startWebRTCConnection()
       }, 1000)
     }
-  }, [voiceRelay.connectionState.remoteSocketId, voiceRelay.connectionState.role, voiceRelay])
+  }, [voiceRelay.connectionState.remoteSocketId, voiceRelay.connectionState.role, voiceRelay.startWebRTCConnection])
 
   // WebRTC 연결 완료 후 음성 릴레이 시작
   useEffect(() => {
@@ -58,7 +88,7 @@ export default function HostPage() {
         voiceRelay.startVoiceRelay()
       }, 500)
     }
-  }, [voiceRelay.webRTCState.connectionState, voiceRelay.isAIConnected, voiceRelay])
+  }, [voiceRelay.webRTCState.connectionState, voiceRelay.isAIConnected, voiceRelay.startVoiceRelay])
 
   const getConnectionStatusColor = (isConnected: boolean, isWaiting: boolean = false) => {
     if (isWaiting) return 'text-yellow-600'
@@ -87,6 +117,27 @@ export default function HostPage() {
         {!roomId && (
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <h2 className="text-xl font-semibold mb-4">시스템 초기화</h2>
+            
+            {/* 마이크 권한 상태 */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center">
+                  <div className="text-2xl mr-3">🎤</div>
+                  <span className="font-medium">마이크 권한</span>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                  microphonePermission === 'granted' 
+                    ? 'bg-green-100 text-green-800' 
+                    : microphonePermission === 'denied'
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {microphonePermission === 'granted' ? '허용됨' : 
+                   microphonePermission === 'denied' ? '거부됨' : '필요함'}
+                </span>
+              </div>
+            </div>
+            
             <button
               onClick={handleInitialize}
               disabled={isInitializing}
@@ -95,6 +146,14 @@ export default function HostPage() {
             >
               {isInitializing ? '초기화 중...' : '호스트 시작하기'}
             </button>
+            
+            {microphonePermission === 'denied' && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-700 text-sm">
+                  마이크 권한이 필요합니다. 브라우저 설정에서 마이크 권한을 허용해주세요.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

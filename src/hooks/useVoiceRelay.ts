@@ -216,9 +216,12 @@ export function useVoiceRelay() {
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
-      cleanup()
+      if (audioProcessorRef.current) {
+        audioProcessorRef.current.cleanup()
+      }
+      openAI.disconnect()
     }
-  }, [cleanup])
+  }, [])
 
   return {
     // 상태
