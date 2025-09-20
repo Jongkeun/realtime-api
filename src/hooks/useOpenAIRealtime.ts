@@ -184,41 +184,6 @@ export function useOpenAIRealtime(callbacks?: OpenAICallbacks) {
     socket.emit("send-openai-message", responseMessage);
   }, [realtimeState.isConnected]);
 
-  // 텍스트 메시지 전송
-  const sendTextMessage = useCallback(
-    (text: string) => {
-      const socket = socketRef.current;
-      if (!socket || !realtimeState.isConnected) {
-        console.warn("Socket.IO가 연결되어 있지 않습니다");
-        return;
-      }
-
-      const message: OpenAIMessage = {
-        type: "conversation.item.create",
-        item: {
-          type: "message",
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: text,
-            },
-          ],
-        },
-      };
-
-      socket.emit("send-openai-message", message);
-
-      // 응답 생성 요청
-      const responseMessage: OpenAIMessage = {
-        type: "response.create",
-      };
-
-      socket.emit("send-openai-message", responseMessage);
-    },
-    [realtimeState.isConnected],
-  );
-
   // 연결 해제
   const disconnect = useCallback(() => {
     const socket = socketRef.current;
@@ -267,7 +232,6 @@ export function useOpenAIRealtime(callbacks?: OpenAICallbacks) {
     ...realtimeState,
     connectToOpenAI,
     sendAudioData,
-    sendTextMessage,
     startConversation,
     disconnect,
   };

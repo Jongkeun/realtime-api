@@ -5,8 +5,6 @@ import { useOpenAIRealtime } from "./useOpenAIRealtime";
 import { AudioProcessor } from "@/utils/audioProcessor";
 
 const BUFFER_SIZE = 4096;
-const MIN_SAMPLES = 1600; // 100ms
-const MIN_BYTES = MIN_SAMPLES * 2;
 interface VoiceRelayState {
   isHostReady: boolean;
   isGuestConnected: boolean;
@@ -44,7 +42,7 @@ export function useVoiceRelay() {
     const processor = audioProcessorRef.current;
     if (processor && connectionState.role === "host") {
       console.log("🎤 AI 응답 오디오 수신, 스트림으로 재생");
-      processor.playAudioToStream(audioData);
+      processor.enqueueAIResponse(audioData);
       setRelayState((prev) => ({ ...prev, currentSpeaker: "ai" }));
 
       // 응답 시작시 플래그 설정
@@ -437,7 +435,6 @@ export function useVoiceRelay() {
           }
           maxAmplitude = Math.max(maxAmplitude, sample);
         }
-
         // 호스트에서 받는 게스트 음성 레벨 업데이트
         const guestLevel = Math.min(100, (maxAmplitude / 32767) * 100);
 
@@ -460,7 +457,9 @@ export function useVoiceRelay() {
           if (conversationTimeoutRef.current) {
             clearTimeout(conversationTimeoutRef.current);
           }
-
+          const MIN_SPEECH_MS = 1000; // 최소 1초
+          const MIN_SAMPLES = 16000 * (MIN_SPEECH_MS / 1000); // 16000
+          const MIN_BYTES = MIN_SAMPLES * 2; // PCM16 (2바이트)
           // 충분한 오디오 데이터가 쌓이고 응답 처리중이 아닐 때만 요청
           if (audioBufferCountRef.current * BUFFER_SIZE * 2 >= MIN_BYTES && !isProcessingResponseRef.current) {
             conversationTimeoutRef.current = setTimeout(() => {

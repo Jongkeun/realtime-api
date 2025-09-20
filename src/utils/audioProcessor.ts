@@ -1,143 +1,101 @@
 // 오디오 처리를 위한 상수들
-const SAMPLE_RATE = 16000; // OpenAI Realtime API 권장 샘플레이트
+const INPUT_TARGET_SR = 16000; // OpenAI Realtime 입력 권장 (PCM16)
+const OUTPUT_SAMPLE_RATE = 24000; // OpenAI Realtime 출력(PCM16) 기본
 const BUFFER_SIZE = 4096;
-const CHANNELS = 1; // 모노 채널
+const CHANNELS = 1; // 모노
 
 export class AudioProcessor {
   private audioContext: AudioContext | null = null;
-  private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private analyserNode: AnalyserNode | null = null;
-  private destinationStream: MediaStream | null = null;
-  private gainNode: GainNode | null = null;
 
-  // AI 응답 스트림을 위한 추가 노드들
+  // 입력(게스트 마이크 or 원격 스트림) 처리용
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private processorNode: ScriptProcessorNode | null = null;
+
+  // 출력(게스트로 보낼 AI 음성) 처리용
   private streamDestination: MediaStreamAudioDestinationNode | null = null;
   private aiResponseStream: MediaStream | null = null;
+
+  // (선택) 로컬 재생/볼륨 조절용
+  private gainNode: GainNode | null = null;
+  private destinationStream: MediaStream | null = null;
+
+  // AI 응답 오디오 재생용 큐
+  private playQueue: AudioBuffer[] = [];
+  private isPlaying = false;
 
   // 오디오 컨텍스트 초기화
   async initializeAudioContext(): Promise<boolean> {
     try {
       this.audioContext = new (window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({
-        sampleRate: SAMPLE_RATE,
-      });
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 
       if (this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
-
-      console.log("오디오 컨텍스트 초기화됨, 샘플레이트:", this.audioContext.sampleRate);
+      console.log("🎛️ AudioContext ready. deviceSampleRate=", this.audioContext.sampleRate);
       return true;
-    } catch (error) {
-      console.error("오디오 컨텍스트 초기화 실패:", error);
+    } catch (err) {
+      console.error("오디오 컨텍스트 초기화 실패:", err);
       return false;
     }
   }
 
-  // 입력 스트림을 OpenAI 포맷으로 처리
+  /**
+   * 입력 스트림을 캡처하여 16k PCM16으로 변환해 콜백으로 전달
+   * - ScriptProcessorNode 사용 (간단/즉시)
+   * - 다운샘플: (예) 48000 → 16000
+   */
   setupInputProcessor(inputStream: MediaStream, onAudioData: (audioBuffer: ArrayBuffer) => void): boolean {
     if (!this.audioContext) {
       console.error("오디오 컨텍스트가 초기화되지 않았습니다");
       return false;
     }
 
-    console.log("🎵 AudioProcessor - 입력 스트림 분석:", {
-      streamId: inputStream.id,
-      audioTracks: inputStream.getAudioTracks().length,
-      audioTrackDetails: inputStream.getAudioTracks().map((track) => ({
-        id: track.id,
-        kind: track.kind,
-        enabled: track.enabled,
-        muted: track.muted,
-        readyState: track.readyState,
-        label: track.label,
-      })),
-      allTracks: inputStream.getTracks().length,
-    });
-
     try {
-      // 입력 소스 노드 생성
+      // 1) 입력 소스
       this.sourceNode = this.audioContext.createMediaStreamSource(inputStream);
-      console.log("✅ MediaStreamSource 노드 생성 완료");
 
-      // 프로세서 노드 생성 (deprecated API 대신 AnalyserNode 사용)
-      this.analyserNode = this.audioContext.createAnalyser();
-      this.analyserNode.fftSize = BUFFER_SIZE * 2;
-      this.analyserNode.smoothingTimeConstant = 0;
+      // 2) ScriptProcessorNode (deprecated이긴 하되, AudioWorklet 없이 빠르게 확인 시 가장 간단)
+      this.processorNode = this.audioContext.createScriptProcessor(BUFFER_SIZE, CHANNELS, CHANNELS);
 
-      // 오디오 데이터 처리
-      const processAudio = () => {
-        const bufferLength = this.analyserNode!.frequencyBinCount;
-        const audioData = new Float32Array(bufferLength);
-        this.analyserNode!.getFloatTimeDomainData(audioData);
+      // 3) 처리 루프
+      this.processorNode.onaudioprocess = (event) => {
+        const inFloat = event.inputBuffer.getChannelData(0); // 원본 float32 (보통 48kHz)
+        const inRate = event.inputBuffer.sampleRate || this.audioContext!.sampleRate;
 
-        // 디버깅용 분석
-        let maxAmplitude = 0;
-        for (let i = 0; i < audioData.length; i++) {
-          const sample = Math.abs(audioData[i]);
-          maxAmplitude = Math.max(maxAmplitude, sample);
-        }
+        // (디버깅) 파형이 살아있는지 간단체크
+        // const peek = Math.max(...inFloat.map(v => Math.abs(v)));
+        // if (peek > 0.01) console.log("🎙️ mic peak:", peek.toFixed(4));
 
-        // if (maxAmplitude > 0.01) {
-        //   console.log("🎵 게스트 오디오 감지됨:", maxAmplitude.toFixed(4));
-        // }
+        // 4) 다운샘플링 → 16k float32
+        const down = this.downsampleFloat32(inFloat, inRate, INPUT_TARGET_SR);
 
-        // Float32Array → PCM16 변환
-        const pcm16Buffer = this.convertToPCM16(audioData);
-        onAudioData(pcm16Buffer);
+        // 5) Float32 → PCM16 (리틀엔디언) 변환
+        const pcm16 = this.floatToPCM16(down);
 
-        // 다음 프레임 처리
-        requestAnimationFrame(processAudio);
+        // 6) 콜백으로 전달 (OpenAI에 append)
+        onAudioData(pcm16);
       };
 
-      // 노드 연결 (무음 경로)
-      this.sourceNode.connect(this.analyserNode);
-
+      // 4) 무음 경로(그래프 활성 유지 + 피드백 방지)
       const silentGain = this.audioContext.createGain();
-      silentGain.gain.value = 0; // 소리 안 나게 음소거
-
-      this.analyserNode.connect(silentGain);
+      silentGain.gain.value = 0;
+      this.sourceNode.connect(this.processorNode);
+      this.processorNode.connect(silentGain);
       silentGain.connect(this.audioContext.destination);
 
-      // 오디오 처리 시작
-      processAudio();
-
-      console.log("입력 오디오 프로세서 설정 완료 (무음 destination 연결)");
+      console.log("✅ 입력 오디오 프로세서 설정 완료 (raw→downsample→PCM16)");
       return true;
-    } catch (error) {
-      console.error("입력 프로세서 설정 실패:", error);
+    } catch (err) {
+      console.error("입력 프로세서 설정 실패:", err);
       return false;
     }
   }
 
-  // OpenAI에서 받은 오디오를 재생 가능한 스트림으로 변환
-  createOutputProcessor(): MediaStream | null {
-    if (!this.audioContext) {
-      console.error("오디오 컨텍스트가 초기화되지 않았습니다");
-      return null;
-    }
-
-    try {
-      // MediaStreamDestination 생성
-      const destination = this.audioContext.createMediaStreamDestination();
-
-      // 볼륨 조절을 위한 게인 노드
-      this.gainNode = this.audioContext.createGain();
-      this.gainNode.gain.value = 1.0; // 기본 볼륨
-
-      // 연결
-      this.gainNode.connect(destination);
-
-      this.destinationStream = destination.stream;
-      console.log("출력 오디오 프로세서 생성 완료");
-      return this.destinationStream;
-    } catch (error) {
-      console.error("출력 프로세서 생성 실패:", error);
-      return null;
-    }
-  }
-
-  // AI 응답용 실시간 MediaStream 생성 (WebRTC 전송용)
+  /**
+   * OpenAI 응답을 WebRTC로 보내기 위한 MediaStream 생성
+   * - enqueueAIResponse()로 AudioBuffer를 재생시키면 이 스트림으로 흘러갑니다.
+   */
   createAIResponseStream(): MediaStream | null {
     if (!this.audioContext) {
       console.error("오디오 컨텍스트가 초기화되지 않았습니다");
@@ -145,171 +103,195 @@ export class AudioProcessor {
     }
 
     try {
-      // AI 응답 전용 MediaStreamDestination 생성
       this.streamDestination = this.audioContext.createMediaStreamDestination();
-
-      // AI 응답용 게인 노드 (별도 볼륨 조절)
-      const aiGainNode = this.audioContext.createGain();
-      aiGainNode.gain.value = 1.0;
-
-      // 연결: aiGainNode → streamDestination
-      aiGainNode.connect(this.streamDestination);
-
       this.aiResponseStream = this.streamDestination.stream;
-
-      console.log("AI 응답용 MediaStream 생성 완료");
+      console.log("🎯 AI 응답 전송용 MediaStream 생성 완료");
       return this.aiResponseStream;
-    } catch (error) {
-      console.error("AI 응답 스트림 생성 실패:", error);
+    } catch (err) {
+      console.error("AI 응답 스트림 생성 실패:", err);
       return null;
     }
   }
 
-  // OpenAI에서 받은 base64 오디오 데이터를 재생
-  async playAudioData(base64AudioData: string): Promise<void> {
-    if (!this.audioContext || !this.gainNode) {
-      console.error("오디오 컨텍스트 또는 게인 노드가 없습니다");
-      return;
+  /**
+   * (선택) 로컬 재생/볼륨 제어가 필요할 때 호출
+   */
+  createOutputProcessor(): MediaStream | null {
+    if (!this.audioContext) {
+      console.error("오디오 컨텍스트가 초기화되지 않았습니다");
+      return null;
     }
 
     try {
-      // base64를 ArrayBuffer로 디코딩
-      const binaryString = atob(base64AudioData);
-      const arrayBuffer = new ArrayBuffer(binaryString.length);
-      const uint8Array = new Uint8Array(arrayBuffer);
+      const destination = this.audioContext.createMediaStreamDestination();
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.gain.value = 1.0;
+      this.gainNode.connect(destination);
 
-      for (let i = 0; i < binaryString.length; i++) {
-        uint8Array[i] = binaryString.charCodeAt(i);
-      }
-
-      // PCM16 데이터를 AudioBuffer로 변환
-      const audioBuffer = await this.pcm16ToAudioBuffer(arrayBuffer);
-
-      // AudioBufferSourceNode로 재생
-      const sourceNode = this.audioContext.createBufferSource();
-      sourceNode.buffer = audioBuffer;
-      sourceNode.connect(this.gainNode);
-      sourceNode.start(0);
-
-      console.log("오디오 재생 시작, 길이:", audioBuffer.duration, "초");
-    } catch (error) {
-      console.error("오디오 재생 실패:", error);
+      this.destinationStream = destination.stream;
+      console.log("🔊 로컬 출력용 MediaStream 생성 완료");
+      return this.destinationStream;
+    } catch (err) {
+      console.error("출력 프로세서 생성 실패:", err);
+      return null;
     }
   }
 
-  // AI 응답 오디오를 실시간 스트림으로 재생 (WebRTC 전송용)
-  async playAudioToStream(base64AudioData: string): Promise<void> {
+  /**
+   * OpenAI에서 받은 base64(PCM16 @ 24kHz 가정) 조각을 큐에 넣고 순차 재생
+   * - WebRTC로 보낼 streamDestination에 연결되어 있어야 함
+   */
+  async enqueueAIResponse(base64AudioData: string): Promise<void> {
     if (!this.audioContext || !this.streamDestination) {
       console.error("오디오 컨텍스트 또는 스트림 대상이 없습니다");
       return;
     }
 
     try {
-      // base64를 ArrayBuffer로 디코딩
-      const binaryString = atob(base64AudioData);
-      const arrayBuffer = new ArrayBuffer(binaryString.length);
-      const uint8Array = new Uint8Array(arrayBuffer);
+      const raw = this.base64ToArrayBuffer(base64AudioData);
+      const audioBuffer = await this.pcm16ToAudioBuffer(raw, OUTPUT_SAMPLE_RATE);
 
-      for (let i = 0; i < binaryString.length; i++) {
-        uint8Array[i] = binaryString.charCodeAt(i);
+      this.playQueue.push(audioBuffer);
+      if (!this.isPlaying) {
+        this.playNextInQueue();
       }
-
-      // PCM16 데이터를 AudioBuffer로 변환
-      const audioBuffer = await this.pcm16ToAudioBuffer(arrayBuffer);
-
-      // AudioBufferSourceNode로 스트림에 재생
-      const sourceNode = this.audioContext.createBufferSource();
-      sourceNode.buffer = audioBuffer;
-
-      // 스트림으로 출력하기 위한 게인 노드 생성
-      const streamGainNode = this.audioContext.createGain();
-      streamGainNode.gain.value = 1.0;
-
-      // 연결: sourceNode → streamGainNode → streamDestination
-      sourceNode.connect(streamGainNode);
-      streamGainNode.connect(this.streamDestination);
-
-      sourceNode.start(0);
-
-      console.log("AI 응답 오디오를 스트림으로 재생, 길이:", audioBuffer.duration, "초");
-    } catch (error) {
-      console.error("스트림 오디오 재생 실패:", error);
+    } catch (err) {
+      console.error("AI 응답 큐 재생 실패:", err);
     }
   }
 
-  // Float32Array를 PCM16으로 변환
-  private convertToPCM16(float32Array: Float32Array): ArrayBuffer {
-    const pcm16Buffer = new ArrayBuffer(float32Array.length * 2); // 16bit = 2bytes
-    const view = new DataView(pcm16Buffer);
-
-    for (let i = 0; i < float32Array.length; i++) {
-      // Float32 (-1.0 ~ 1.0)를 Int16 (-32768 ~ 32767)로 변환
-      let sample = Math.max(-1, Math.min(1, float32Array[i]));
-      sample = sample * 0x7fff; // 32767
-      view.setInt16(i * 2, sample, true); // little-endian
+  private playNextInQueue() {
+    if (!this.audioContext || !this.streamDestination) {
+      this.isPlaying = false;
+      return;
+    }
+    if (this.playQueue.length === 0) {
+      this.isPlaying = false;
+      return;
     }
 
-    return pcm16Buffer;
+    this.isPlaying = true;
+    const buffer = this.playQueue.shift()!;
+
+    const sourceNode = this.audioContext.createBufferSource();
+    sourceNode.buffer = buffer;
+
+    // 필요 시 개별 게인(전송 레벨 조정)
+    const g = this.audioContext.createGain();
+    g.gain.value = 1.0;
+
+    sourceNode.connect(g);
+    g.connect(this.streamDestination);
+
+    sourceNode.start(0);
+    // console.log("🔊 AI 오디오 재생:", buffer.duration.toFixed(2), "s");
+
+    sourceNode.onended = () => {
+      this.playNextInQueue();
+    };
   }
 
-  // PCM16 ArrayBuffer를 AudioBuffer로 변환
-  private async pcm16ToAudioBuffer(pcm16Data: ArrayBuffer): Promise<AudioBuffer> {
-    if (!this.audioContext) {
-      throw new Error("오디오 컨텍스트가 없습니다");
+  // -------- 유틸리티들 --------
+
+  // 간단한 다운샘플러: 선형 보간 대신, 성능/안정 위해 "집계 샘플링"(nearest) + 간단 LPF 없이 사용
+  // 필요 시 품질을 높이려면 FIR/linear interpolation을 적용 가능
+  private downsampleFloat32(input: Float32Array, inRate: number, outRate: number): Float32Array {
+    if (outRate === inRate) return input.slice();
+    if (outRate > inRate) {
+      // 업샘플이 필요한 경우는 없음(입력은 보통 48k이고 목표는 16k)
+      return input.slice();
     }
+
+    const ratio = inRate / outRate;
+    const newLen = Math.floor(input.length / ratio);
+    const result = new Float32Array(newLen);
+
+    let idx = 0;
+    let pos = 0;
+    while (idx < newLen) {
+      result[idx++] = input[Math.floor(pos)] || 0;
+      pos += ratio;
+    }
+    return result;
+  }
+
+  private floatToPCM16(float32: Float32Array): ArrayBuffer {
+    const out = new ArrayBuffer(float32.length * 2);
+    const view = new DataView(out);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i])); // clamp
+      // (선택) 입력이 너무 작다면 약간의 증폭:
+      // s *= 1.5; // 필요 시 주석 해제
+      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return out;
+  }
+
+  private base64ToArrayBuffer(b64: string): ArrayBuffer {
+    const bin = atob(b64);
+    const len = bin.length;
+    const buf = new ArrayBuffer(len);
+    const u8 = new Uint8Array(buf);
+    for (let i = 0; i < len; i++) u8[i] = bin.charCodeAt(i);
+    return buf;
+  }
+
+  // PCM16 ArrayBuffer → AudioBuffer (샘플레이트 지정)
+  private async pcm16ToAudioBuffer(pcm16Data: ArrayBuffer, sampleRate: number): Promise<AudioBuffer> {
+    if (!this.audioContext) throw new Error("오디오 컨텍스트가 없습니다");
 
     const dataView = new DataView(pcm16Data);
-    const frameCount = pcm16Data.byteLength / 2; // 16bit = 2bytes per sample
+    const frameCount = pcm16Data.byteLength / 2;
+    const audioBuffer = this.audioContext.createBuffer(CHANNELS, frameCount, sampleRate);
+    const chData = audioBuffer.getChannelData(0);
 
-    // AudioBuffer 생성
-    const audioBuffer = this.audioContext.createBuffer(CHANNELS, frameCount, SAMPLE_RATE);
-    const channelData = audioBuffer.getChannelData(0);
-
-    // PCM16을 Float32로 변환
     for (let i = 0; i < frameCount; i++) {
-      const int16Sample = dataView.getInt16(i * 2, true); // little-endian
-      channelData[i] = int16Sample / 0x7fff; // normalize to -1.0 ~ 1.0
+      const int16 = dataView.getInt16(i * 2, true);
+      chData[i] = int16 / 0x8000; // -32768~32767 → -1~<1
     }
-
     return audioBuffer;
   }
 
-  // 볼륨 조절
+  // (선택) 로컬 볼륨 조절
   setVolume(volume: number): void {
     if (this.gainNode) {
-      this.gainNode.gain.value = Math.max(0, Math.min(2, volume)); // 0 ~ 2.0 범위
+      this.gainNode.gain.value = Math.max(0, Math.min(2, volume));
     }
   }
 
   // 리소스 정리
   cleanup(): void {
-    if (this.analyserNode) {
-      this.analyserNode.disconnect();
-      this.analyserNode = null;
-    }
+    try {
+      if (this.processorNode) {
+        this.processorNode.disconnect();
+        this.processorNode.onaudioprocess = null;
+        this.processorNode = null;
+      }
+      if (this.sourceNode) {
+        this.sourceNode.disconnect();
+        this.sourceNode = null;
+      }
+      if (this.gainNode) {
+        this.gainNode.disconnect();
+        this.gainNode = null;
+      }
+      if (this.streamDestination) {
+        this.streamDestination.disconnect();
+        this.streamDestination = null;
+      }
+      if (this.audioContext) {
+        this.audioContext.close();
+        this.audioContext = null;
+      }
 
-    if (this.sourceNode) {
-      this.sourceNode.disconnect();
-      this.sourceNode = null;
-    }
+      this.destinationStream = null;
+      this.aiResponseStream = null;
+      this.playQueue = [];
+      this.isPlaying = false;
 
-    if (this.gainNode) {
-      this.gainNode.disconnect();
-      this.gainNode = null;
+      console.log("🧹 오디오 프로세서 리소스 정리 완료");
+    } catch (e) {
+      console.warn("정리 중 경고:", e);
     }
-
-    if (this.streamDestination) {
-      this.streamDestination.disconnect();
-      this.streamDestination = null;
-    }
-
-    if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
-    }
-
-    this.destinationStream = null;
-    this.aiResponseStream = null;
-    console.log("오디오 프로세서 리소스 정리 완료");
   }
 }

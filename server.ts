@@ -94,12 +94,10 @@ class OpenAIRealtimeConnection {
               voice: "shimmer",
               input_audio_format: "pcm16",
               output_audio_format: "pcm16",
-              turn_detection: {
-                type: "server_vad",
-                threshold: 0.5,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 500,
+              input_audio_transcription: {
+                model: "whisper-1",
               },
+              turn_detection: null, // VAD 비활성화로 수동 제어
             },
           };
 
@@ -113,7 +111,35 @@ class OpenAIRealtimeConnection {
         this.ws.on("message", (data) => {
           try {
             const message = JSON.parse(data.toString());
-            console.log("OpenAI 메시지:", message.type);
+            console.log("OpenAI 메시지:", message.type, message.event_id ? `(${message.event_id})` : "");
+
+            // 상세 디버깅을 위한 특정 이벤트 전체 로깅
+            if (
+              message.type.includes("input_audio") ||
+              message.type.includes("transcription") ||
+              message.type.includes("conversation.item")
+            ) {
+              console.log("🔍 상세 정보:", JSON.stringify(message, null, 2));
+            }
+
+            // 음성 전사 결과 로깅
+            if (message.type === "conversation.item.input_audio_transcription.completed") {
+              console.log("🎙️  음성 → 텍스트 변환 결과:", message.transcript);
+            }
+
+            // 대화 아이템 생성 시 내용 로깅
+            if (message.type === "conversation.item.created" && message.item?.content) {
+              const content = message.item.content[0];
+              if (content?.type === "input_audio") {
+                console.log("📹 오디오 입력 감지");
+              }
+              if (content?.type === "input_text") {
+                console.log("💬 텍스트 입력:", content.text);
+              }
+              if (content?.transcript) {
+                console.log("📝 전사된 텍스트:", content.transcript);
+              }
+            }
 
             // 클라이언트에 메시지 전달
             io.to(this.socketId).emit("openai-message", message);
@@ -142,6 +168,15 @@ class OpenAIRealtimeConnection {
 
   sendMessage(message: OpenAIMessage) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      // 오디오 관련 메시지 로깅
+      if (message.type === "input_audio_buffer.append") {
+        console.log("📤 오디오 데이터 전송:", message.type);
+      } else if (message.type === "input_audio_buffer.commit") {
+        console.log("📤 오디오 커밋 요청:", message.type);
+      } else {
+        console.log("📤 메시지 전송:", message.type);
+      }
+
       this.ws.send(JSON.stringify(message));
     } else {
       console.warn("OpenAI WebSocket이 연결되어 있지 않습니다");
@@ -182,20 +217,6 @@ app.prepare().then(() => {
 
   // 활성 방 목록 관리
   const activeRooms = new Map<string, RoomInfo>();
-
-  // 테스트용 더미 방 추가 (개발 중에만 사용)
-  if (IS_DEVELOPMENT) {
-    const testRoom: RoomInfo = {
-      roomId: "test123",
-      hostSocketId: "test-host-socket",
-      hostName: "테스트 호스트",
-      guestCount: 0,
-      maxGuests: 1,
-      createdAt: new Date(),
-    };
-    activeRooms.set("test123", testRoom);
-    console.log("🧪 개발용 테스트 방 생성됨:", testRoom.roomId);
-  }
 
   // 방 목록을 모든 클라이언트에 브로드캐스트
   function broadcastRoomList() {

@@ -14,7 +14,7 @@ const RTC_CONFIGURATION: RTCConfiguration = {
 };
 
 const AUDIO_CONSTRAINTS: MediaStreamConstraints = {
-  audio: true, // 최소한의 오디오 설정
+  audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false }, // 최소한의 오디오 설정
   video: false,
 };
 
