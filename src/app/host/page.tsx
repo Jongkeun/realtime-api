@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useVoiceRelay } from "@/hooks/useVoiceRelay";
-import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
 
 export default function HostPage() {
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -16,7 +15,6 @@ export default function HostPage() {
   });
 
   const voiceRelay = useVoiceRelay();
-  const microphone = useMicrophonePermission();
 
   // 호스트 초기화
   const handleInitialize = async () => {
@@ -30,10 +28,7 @@ export default function HostPage() {
 
     try {
       // 마이크 권한 먼저 요청
-      const permissionGranted = await microphone.requestPermission();
-      if (!permissionGranted) {
-        throw new Error(microphone.error || "마이크 권한이 필요합니다.");
-      }
+      // 호스트는 마이크 권한이 필요하지 않음
 
       const createdRoomId = await voiceRelay.initializeAsHost(hostName.trim());
       if (createdRoomId) {
@@ -73,7 +68,7 @@ export default function HostPage() {
         voiceRelay.startVoiceRelay();
       }, 500);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps  
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceRelay.webRTCState.connectionState, voiceRelay.isAIConnected]);
 
   const getConnectionStatusColor = (isConnected: boolean, isWaiting: boolean = false) => {
@@ -100,30 +95,7 @@ export default function HostPage() {
           <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
             <h2 className="text-xl font-semibold mb-4">시스템 초기화</h2>
 
-            {/* 마이크 권한 상태 */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center">
-                  <div className="text-2xl mr-3">🎤</div>
-                  <span className="font-medium">마이크 권한</span>
-                </div>
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                    microphone.permission === "granted"
-                      ? "bg-green-100 text-green-800"
-                      : microphone.permission === "denied"
-                      ? "bg-red-100 text-red-800"
-                      : "bg-yellow-100 text-yellow-800"
-                  }`}
-                >
-                  {microphone.permission === "granted"
-                    ? "허용됨"
-                    : microphone.permission === "denied"
-                    ? "거부됨"
-                    : "필요함"}
-                </span>
-              </div>
-            </div>
+            {/* 호스트는 마이크 권한이 필요하지 않음 */}
 
             {/* 호스트 이름 입력 */}
             <div className="mb-6">
@@ -140,66 +112,19 @@ export default function HostPage() {
                 disabled={isInitializing}
                 maxLength={20}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                최대 20자까지 입력 가능합니다
-              </p>
+              <p className="text-xs text-gray-500 mt-1">최대 20자까지 입력 가능합니다</p>
             </div>
 
             <button
               onClick={handleInitialize}
-              disabled={isInitializing || microphone.isLoading || !hostName.trim()}
+              disabled={isInitializing || !hostName.trim()}
               className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 
                          text-white font-semibold py-3 px-6 rounded-lg transition-colors"
             >
-              {isInitializing 
-                ? "초기화 중..." 
-                : microphone.isLoading 
-                ? "권한 요청 중..."
-                : "호스트 시작하기"}
+              {isInitializing ? "초기화 중..." : "호스트 시작하기"}
             </button>
 
-            {microphone.permission === "denied" && (
-              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-start space-x-3">
-                  <div className="text-red-500 text-xl">⚠️</div>
-                  <div className="flex-1">
-                    <h4 className="text-red-800 font-semibold mb-2">마이크 권한이 필요합니다</h4>
-                    <p className="text-red-700 text-sm mb-3">음성 릴레이를 사용하려면 마이크 접근을 허용해야 합니다.</p>
-                    <div className="text-red-700 text-sm mb-3">
-                      <strong>권한 허용 방법:</strong>
-                      <ol className="mt-1 ml-4 list-decimal">
-                        <li>브라우저 주소창 왼쪽의 🔒 (또는 ⚠️) 아이콘 클릭</li>
-                        <li>&quot;마이크&quot; 설정을 &quot;허용&quot;으로 변경</li>
-                        <li>페이지 새로고침 또는 아래 버튼 클릭</li>
-                      </ol>
-                    </div>
-                    <button
-                      onClick={microphone.resetPermission}
-                      className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 text-sm rounded border border-red-300"
-                    >
-                      권한 다시 요청하기
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {microphone.error && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-red-700 text-sm">
-                  ⚠️ {microphone.error}
-                </p>
-              </div>
-            )}
-
-            {microphone.permission === "prompt" && (
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-blue-700 text-sm">
-                  ℹ️ &quot;호스트 시작하기&quot;를 클릭하면 마이크 권한을 요청합니다. 브라우저에서 &quot;허용&quot;을
-                  선택해주세요.
-                </p>
-              </div>
-            )}
+            {/* 호스트는 마이크 권한이 필요하지 않음 */}
           </div>
         )}
 
@@ -313,10 +238,7 @@ export default function HostPage() {
 
         {/* 네비게이션 */}
         <div className="mt-6 text-center">
-          <a 
-            href="/" 
-            className="text-blue-600 hover:text-blue-800 text-sm underline"
-          >
+          <a href="/" className="text-blue-600 hover:text-blue-800 text-sm underline">
             ← 메인 페이지로 돌아가기
           </a>
         </div>

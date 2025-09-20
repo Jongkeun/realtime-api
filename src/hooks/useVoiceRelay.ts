@@ -48,12 +48,14 @@ export function useVoiceRelay() {
         : connectionState.role === "guest" && webRTC.isConnected; // 게스트: 자신의 연결 상태
 
     // 디버그 로그
-    console.log("VoiceRelay 상태 업데이트:", {
+    console.log("🎯 VoiceRelay 상태 업데이트:", {
       role: connectionState.role,
       isConnected: connectionState.isConnected,
       remoteSocketId: connectionState.remoteSocketId,
       webRTCConnected: webRTC.isConnected,
       webRTCState: webRTC.connectionState,
+      webRTCLocalStream: !!webRTC.localStream,
+      webRTCRemoteStream: !!webRTC.remoteStream,
       openAIConnected: openAI.isConnected,
       openAISessionActive: openAI.isSessionActive,
       calculatedGuestConnected: isGuestConnected,
@@ -78,34 +80,51 @@ export function useVoiceRelay() {
   ]);
 
   // 호스트: 방 생성 및 시스템 초기화
-  const initializeAsHost = useCallback(async (hostName: string): Promise<string | null> => {
-    try {
-      // 소켓 방 생성 먼저 (WebRTC 연결을 위해)
-      const roomId = await new Promise<string>((resolve, reject) => {
-        createRoom(hostName, (roomId) => {
-          console.log("호스트 초기화 완료, 방 ID:", roomId);
-          resolve(roomId);
+  const initializeAsHost = useCallback(
+    async (hostName: string): Promise<string | null> => {
+      try {
+        // 오디오 프로세서 초기화
+        const processor = audioProcessorRef.current;
+        if (!processor) {
+          throw new Error("오디오 프로세서가 초기화되지 않았습니다");
+        }
+
+        const audioInitialized = await processor.initializeAudioContext();
+        if (!audioInitialized) {
+          throw new Error("오디오 컨텍스트 초기화 실패");
+        }
+
+        // OpenAI 연결
+        const aiConnected = await openAI.connectToOpenAI();
+        if (!aiConnected) {
+          throw new Error("OpenAI 연결 실패");
+        }
+
+        // 소켓 방 생성
+        const roomId = await new Promise<string>((resolve, reject) => {
+          createRoom(hostName, (roomId) => {
+            console.log("호스트 초기화 완료, 방 ID:", roomId);
+            resolve(roomId);
+          });
+
+          // 타임아웃 설정
+          setTimeout(() => {
+            reject(new Error("방 생성 타임아웃"));
+          }, 5000);
         });
 
-        // 타임아웃 설정
-        setTimeout(() => {
-          reject(new Error("방 생성 타임아웃"));
-        }, 5000);
-      });
-
-      // WebRTC 연결 완료 후 OpenAI 연결 (순차적 초기화)
-      console.log("WebRTC 연결 완료 후 OpenAI 연결 예정");
-      
-      return roomId;
-    } catch (error) {
-      console.error("호스트 초기화 실패:", error);
-      setRelayState((prev) => ({
-        ...prev,
-        error: error instanceof Error ? error.message : "호스트 초기화 실패",
-      }));
-      return null;
-    }
-  }, [createRoom]);
+        return roomId;
+      } catch (error) {
+        console.error("호스트 초기화 실패:", error);
+        setRelayState((prev) => ({
+          ...prev,
+          error: error instanceof Error ? error.message : "호스트 초기화 실패",
+        }));
+        return null;
+      }
+    },
+    [createRoom, openAI],
+  );
 
   // 게스트: 방 참여
   const joinAsGuest = useCallback(
@@ -123,7 +142,7 @@ export function useVoiceRelay() {
         }
 
         // 소켓 방 참여
-        return new Promise((resolve, reject) => {
+        const success = await new Promise<boolean>((resolve, reject) => {
           joinRoom(roomId, (success, error) => {
             if (success) {
               console.log("게스트 참여 완료, 방 ID:", roomId);
@@ -138,6 +157,8 @@ export function useVoiceRelay() {
             reject(new Error("방 참여 타임아웃"));
           }, 5000);
         });
+
+        return success;
       } catch (error) {
         console.error("게스트 참여 실패:", error);
         setRelayState((prev) => ({
@@ -170,15 +191,6 @@ export function useVoiceRelay() {
       console.log("WebRTC Offer 생성 시작...");
       await webRTC.createOffer();
       console.log("WebRTC 연결 시작됨");
-
-      // WebRTC 연결 성공 후 OpenAI 연결 (순차적 초기화)
-      console.log("WebRTC 연결 완료, OpenAI 연결 시작...");
-      const aiConnected = await openAI.connectToOpenAI();
-      if (aiConnected) {
-        console.log("OpenAI 연결 성공");
-      } else {
-        console.warn("OpenAI 연결 실패, WebRTC는 정상 작동");
-      }
     } catch (error) {
       console.error("WebRTC 연결 시작 실패:", error);
       setRelayState((prev) => ({
@@ -186,7 +198,7 @@ export function useVoiceRelay() {
         error: "WebRTC 연결 시작 실패",
       }));
     }
-  }, [connectionState.role, connectionState.remoteSocketId, webRTC, openAI]);
+  }, [connectionState.role, connectionState.remoteSocketId, webRTC]);
 
   // 음성 릴레이 시작 (호스트 전용)
   const startVoiceRelay = useCallback(() => {
