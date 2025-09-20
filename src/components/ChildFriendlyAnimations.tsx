@@ -40,7 +40,7 @@ export function PulsingMicrophone({ isListening, size = 'medium' }: PulsingMicro
 }
 
 interface SpeakingCharacterProps {
-  speaker: 'child' | 'ai' | 'none'
+  speaker: 'guest' | 'ai' | 'none'
 }
 
 export function SpeakingCharacter({ speaker }: SpeakingCharacterProps) {
@@ -68,13 +68,13 @@ export function SpeakingCharacter({ speaker }: SpeakingCharacterProps) {
     <div className="relative">
       <div className={`
         text-8xl transition-transform duration-300
-        ${speaker === 'child' ? 'animate-bounce' : speaker === 'ai' ? 'animate-pulse scale-110' : ''}
+        ${speaker === 'guest' ? 'animate-bounce' : speaker === 'ai' ? 'animate-pulse scale-110' : ''}
       `}>
-        {speaker === 'child' ? '👶' : '🤖'}
+        {speaker === 'guest' ? '👶' : '🤖'}
       </div>
       
       {/* 말하고 있을 때 효과 */}
-      {speaker !== 'none' && (
+      {(speaker as 'guest' | 'ai' | 'none') !== 'none' && (
         <div className="absolute -top-4 -right-4">
           <div className="relative">
             {/* 말풍선들 */}

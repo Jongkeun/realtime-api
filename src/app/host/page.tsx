@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useVoiceRelay } from "@/hooks/useVoiceRelay";
+import VoiceVisualizer from "@/components/VoiceVisualizer";
+import Link from "next/link";
 
 export default function HostPage() {
   const [roomId, setRoomId] = useState<string | null>(null);
-  const [hostName, setHostName] = useState<string>("");
+  const [hostName, setHostName] = useState<string>("테스트");
   const [isInitializing, setIsInitializing] = useState(false);
   const [connectionSteps, setConnectionSteps] = useState({
     audioReady: false,
@@ -27,9 +29,7 @@ export default function HostPage() {
     setConnectionSteps((prev) => ({ ...prev, audioReady: false, aiConnected: false, roomCreated: false }));
 
     try {
-      // 마이크 권한 먼저 요청
       // 호스트는 마이크 권한이 필요하지 않음
-
       const createdRoomId = await voiceRelay.initializeAsHost(hostName.trim());
       if (createdRoomId) {
         setRoomId(createdRoomId);
@@ -50,16 +50,14 @@ export default function HostPage() {
 
   // 게스트 참여 감지 및 WebRTC 연결 시작
   useEffect(() => {
-    if (voiceRelay.connectionState.remoteSocketId && voiceRelay.connectionState.role === "host") {
+    if (voiceRelay.isGuestConnected) {
       setConnectionSteps((prev) => ({ ...prev, guestWaiting: false }));
 
       // WebRTC 연결 시작
-      setTimeout(() => {
-        voiceRelay.startWebRTCConnection();
-      }, 1000);
+      voiceRelay.startWebRTCConnection();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceRelay.connectionState.remoteSocketId, voiceRelay.connectionState.role]);
+  }, [voiceRelay.isGuestConnected]);
 
   // WebRTC 연결 완료 후 음성 릴레이 시작
   useEffect(() => {
@@ -206,6 +204,25 @@ export default function HostPage() {
                 )}
               </div>
             </div>
+
+            {/* 게스트 음성 레벨 시각화 */}
+            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">게스트 음성 수신 상태</h3>
+              <div className="flex justify-center">
+                <VoiceVisualizer
+                  isActive={voiceRelay.isGuestConnected}
+                  audioLevel={voiceRelay.guestAudioLevel}
+                  className="bg-white rounded-lg p-3 shadow-sm"
+                />
+              </div>
+              <p className="text-xs text-gray-500 text-center mt-2">
+                게스트의 음성이 실시간으로 들어오는 것을 확인할 수 있습니다
+              </p>
+              {/* 디버깅용 실시간 오디오 레벨 표시 */}
+              <p className="text-xs text-blue-600 text-center mt-1">
+                Debug: guestAudioLevel = {voiceRelay.guestAudioLevel?.toFixed(1) || 0}
+              </p>
+            </div>
           </div>
         )}
 
@@ -238,9 +255,9 @@ export default function HostPage() {
 
         {/* 네비게이션 */}
         <div className="mt-6 text-center">
-          <a href="/" className="text-blue-600 hover:text-blue-800 text-sm underline">
+          <Link href="/" className="text-blue-600 hover:text-blue-800 text-sm underline">
             ← 메인 페이지로 돌아가기
-          </a>
+          </Link>
         </div>
       </div>
     </div>

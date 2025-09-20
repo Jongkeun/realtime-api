@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSocket } from "@/hooks/useSocket";
 import { useVoiceRelay } from "@/hooks/useVoiceRelay";
+import { useSocket } from "@/hooks/useSocket";
 import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
-import type { RoomInfo } from "@/types/socket";
+import VoiceVisualizer from "@/components/VoiceVisualizer";
+import Link from "next/link";
 
 export default function GuestPage() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -12,8 +13,8 @@ export default function GuestPage() {
   const [hasJoined, setHasJoined] = useState(false);
   const [loadingRooms, setLoadingRooms] = useState(true);
 
-  const { socket, roomList, getRoomList, joinRoom } = useSocket();
   const voiceRelay = useVoiceRelay();
+  const { socket, roomList, getRoomList } = useSocket();
   const microphone = useMicrophonePermission();
 
   // 페이지 로드 시 방 목록 가져오기
@@ -24,7 +25,34 @@ export default function GuestPage() {
         setLoadingRooms(false);
       });
     }
-  }, [socket, getRoomList]);
+  }, [socket]);
+
+  // join 성공 후 로컬 스트림을 소비
+  useEffect(() => {
+    if (hasJoined && voiceRelay.webRTCState.localStream) {
+      const audioEl = document.createElement("audio");
+      audioEl.srcObject = voiceRelay.webRTCState.localStream;
+      audioEl.muted = true; // 스피커로는 안 나옴
+      audioEl.play().catch((err) => console.warn("로컬 스트림 play 실패:", err));
+      document.body.appendChild(audioEl);
+      console.log("🎤 게스트 로컬 스트림 소비용 <audio> 태그 추가됨");
+
+      voiceRelay.webRTCState.localStream?.getAudioTracks().forEach((track) => {
+        console.log("🎙 게스트 트랙 상태:", {
+          id: track.id,
+          enabled: track.enabled,
+          muted: track.muted,
+          readyState: track.readyState,
+        });
+      });
+
+      return () => {
+        audioEl.srcObject = null;
+        audioEl.remove();
+        console.log("🎤 게스트 로컬 스트림 소비용 <audio> 태그 제거됨");
+      };
+    }
+  }, [hasJoined, voiceRelay.webRTCState.localStream]);
 
   // 방 목록이 업데이트되면 로딩 상태 해제
   useEffect(() => {
@@ -124,7 +152,7 @@ export default function GuestPage() {
           )}
 
           {/* 대화 상태 표시 */}
-          {voiceRelay.isRelayActive && (
+          {voiceRelay.webRTCState.connectionState === "connected" && (
             <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
               <div className="text-center mb-6">
                 <div className="text-4xl mb-4">
@@ -144,6 +172,26 @@ export default function GuestPage() {
                     ? "잠시만 기다려주세요..."
                     : "마이크에 대고 말해보세요!"}
                 </p>
+
+                {/* 실시간 음성 시각화 */}
+                <div className="flex justify-center mt-6">
+                  <VoiceVisualizer
+                    isActive={voiceRelay.webRTCState.connectionState === "connected"}
+                    audioLevel={voiceRelay.microphoneLevel}
+                    className="bg-gray-50 rounded-xl p-4"
+                  />
+                </div>
+
+                {/* 게스트 디버깅 정보 */}
+                <div className="text-center mt-4">
+                  <p className="text-xs text-blue-600">
+                    Guest Debug: micLevel = {voiceRelay.microphoneLevel?.toFixed(1) || 0}
+                  </p>
+                  <p className="text-xs text-green-600">
+                    WebRTC: {voiceRelay.webRTCState.connectionState} | Connected:{" "}
+                    {voiceRelay.webRTCState.connectionState === "connected" ? "true" : "false"}
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -188,9 +236,9 @@ export default function GuestPage() {
 
           {/* 네비게이션 */}
           <div className="mt-6 text-center">
-            <a href="/" className="text-purple-600 hover:text-purple-800 text-sm underline">
+            <Link href="/" className="text-purple-600 hover:text-purple-800 text-sm underline">
               ← 메인 페이지로 돌아가기
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -363,9 +411,9 @@ export default function GuestPage() {
 
         {/* 네비게이션 */}
         <div className="mt-6 text-center">
-          <a href="/" className="text-purple-600 hover:text-purple-800 text-sm underline">
+          <Link href="/" className="text-purple-600 hover:text-purple-800 text-sm underline">
             ← 메인 페이지로 돌아가기
-          </a>
+          </Link>
         </div>
       </div>
     </div>

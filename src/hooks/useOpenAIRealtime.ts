@@ -13,7 +13,12 @@ interface RealtimeState {
   conversationId: string | null;
 }
 
-export function useOpenAIRealtime() {
+interface OpenAICallbacks {
+  onAudioResponse?: (audioData: string) => void; // AI 응답 오디오 콜백
+  onResponseComplete?: () => void; // AI 응답 완료 콜백
+}
+
+export function useOpenAIRealtime(callbacks?: OpenAICallbacks) {
   const socketRef = useRef<Socket | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>({
     isConnected: false,
@@ -71,8 +76,15 @@ export function useOpenAIRealtime() {
             break;
           case "response.audio.delta":
             // 오디오 데이터 처리
-            if (message.delta) {
-              console.log("오디오 델타 수신");
+            if (message.delta && callbacks?.onAudioResponse) {
+              console.log("오디오 델타 수신, 콜백 호출");
+              callbacks.onAudioResponse(message.delta as string);
+            }
+            break;
+          case "response.done":
+            console.log("🎯 AI 응답 완료");
+            if (callbacks?.onResponseComplete) {
+              callbacks.onResponseComplete();
             }
             break;
           case "error":
@@ -123,7 +135,7 @@ export function useOpenAIRealtime() {
       }));
       return false;
     }
-  }, []);
+  }, [callbacks]);
 
   // 오디오 데이터 전송
   const sendAudioData = useCallback(

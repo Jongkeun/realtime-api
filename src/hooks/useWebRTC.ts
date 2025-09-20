@@ -21,6 +21,7 @@ const AUDIO_CONSTRAINTS: MediaStreamConstraints = {
 interface WebRTCState {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  outgoingStream: MediaStream | null; // 호스트가 게스트로 전송하는 스트림 (AI 응답)
   isConnected: boolean;
   connectionState: RTCPeerConnectionState;
 }
@@ -32,6 +33,7 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
   const [webrtcState, setWebRTCState] = useState<WebRTCState>({
     localStream: null,
     remoteStream: null,
+    outgoingStream: null,
     isConnected: false,
     connectionState: "new",
   });
@@ -155,7 +157,27 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
           ...prev,
           remoteStream,
         }));
-        console.log("🎧 원격 스트림 수신됨");
+
+        // 👉 확인용으로 재생
+        const audioEl = document.createElement("audio");
+        audioEl.srcObject = remoteStream;
+        audioEl.autoplay = true;
+        audioEl.muted = true; // ✅ 실제로는 안 들리게
+        document.body.appendChild(audioEl);
+
+        console.log("🎧 원격 스트림 수신됨:", remoteStream);
+
+        event.track.onmute = () => {
+          console.warn("🎧 원격 트랙 mute됨:", event.track.id);
+        };
+        event.track.onunmute = () => {
+          console.log("🎧 원격 트랙 unmute됨:", event.track.id);
+        };
+        console.log("🎧 원격 스트림 수신됨", {
+          tracks: remoteStream
+            .getTracks()
+            .map((t) => ({ id: t.id, kind: t.kind, muted: t.muted, readyState: t.readyState })),
+        });
       };
 
       // ICE candidate 처리
@@ -219,7 +241,7 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
 
       // 호스트는 마이크 없이 Offer 생성 (게스트의 음성만 수신)
       console.log("🎵 호스트는 마이크 없이 Offer 생성 (게스트 음성 수신용)");
-
+      peerConnection.addTransceiver("audio", { direction: "recvonly" });
       // PeerConnection 상태 확인
       console.log("PeerConnection 초기 상태:", {
         connectionState: peerConnection.connectionState,
@@ -290,12 +312,12 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
       signalingState: pc?.signalingState,
     });
 
-    if (!pc || !pc.remoteDescription || pendingCandidatesRef.current.length === 0 || pc.signalingState === "closed") {
+    if (!pc || !pc.remoteDescription || pendingCandidatesRef.current.length === 0) {
       console.log("⚠️ 큐 처리 건너뜀:", {
         noPeerConnection: !pc,
         noRemoteDescription: !pc?.remoteDescription,
         emptyQueue: pendingCandidatesRef.current.length === 0,
-        closed: pc?.signalingState === "closed",
+        closed: !pc,
       });
       return;
     }
@@ -319,9 +341,9 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
           sdpMid: candidate.sdpMid,
         });
 
-        // PeerConnection이 닫혔으면 즉시 중단
-        if (pc.signalingState === "closed") {
-          console.warn("❌ PeerConnection이 닫혔으므로 ICE candidate 처리 중단");
+        // PeerConnection이 없으면 즉시 중단
+        if (!pc) {
+          console.warn("❌ PeerConnection이 없으므로 ICE candidate 처리 중단");
           break;
         }
 
@@ -401,7 +423,7 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
       console.log("🔗 로컬 스트림을 PeerConnection에 추가 중...");
       localStream.getTracks().forEach((track) => {
         peerConnection.addTrack(track, localStream);
-        console.log("📡 트랙 추가됨:", track.kind, track.id);
+        console.log("📡 트랙 추가됨:", track.kind, track.id, track.enabled, track.muted, track.readyState);
       });
       console.log("✅ 로컬 스트림 추가 완료");
 
@@ -564,8 +586,8 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
       return;
     }
 
-    // PeerConnection이 없거나 닫힌 상태인 경우 큐에 저장
-    if (!pc || pc.signalingState === "closed") {
+    // PeerConnection이 없는 경우 큐에 저장
+    if (!pc) {
       console.warn("PeerConnection이 없거나 닫힌 상태이므로 ICE candidate를 큐에 저장합니다");
       pendingCandidatesRef.current.push(candidate);
       return;
@@ -629,13 +651,59 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
 
       console.log("✅ useWebRTC 정리 완료");
     };
-    // }, [webrtcState.localStream, cleanupPeerConnection]);
-  }, []);
+  }, []); // 언마운트 시에만 cleanup
+
+  // 송신 스트림 설정 (호스트용 - AI 응답을 게스트에게 전송)
+  const setOutgoingStream = useCallback(
+    (stream: MediaStream | null) => {
+      const peerConnection = peerConnectionRef.current;
+
+      if (!peerConnection) {
+        console.warn("PeerConnection이 없어서 송신 스트림을 설정할 수 없습니다");
+        return;
+      }
+
+      if (role !== "host") {
+        console.warn("호스트만 송신 스트림을 설정할 수 있습니다");
+        return;
+      }
+
+      try {
+        // 기존 송신 트랙들 제거
+        const senders = peerConnection.getSenders();
+        senders.forEach((sender) => {
+          if (sender.track) {
+            console.log("🗑️ 기존 송신 트랙 제거:", sender.track.kind, sender.track.id);
+            peerConnection.removeTrack(sender);
+          }
+        });
+
+        // 새 스트림 추가
+        if (stream) {
+          stream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, stream);
+            console.log("📡 송신 트랙 추가:", track.kind, track.id);
+          });
+        }
+
+        setWebRTCState((prev) => ({
+          ...prev,
+          outgoingStream: stream,
+        }));
+
+        console.log("✅ 송신 스트림 설정 완료");
+      } catch (error) {
+        console.error("❌ 송신 스트림 설정 실패:", error);
+      }
+    },
+    [role],
+  );
 
   return {
     ...webrtcState,
     createOffer,
     initializeLocalStream,
+    setOutgoingStream,
     cleanup: cleanupPeerConnection,
   };
 }
