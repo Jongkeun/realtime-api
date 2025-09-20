@@ -179,7 +179,7 @@ app.prepare().then(() => {
 
   // 연결된 OpenAI 인스턴스들을 관리
   const openaiConnections = new Map<string, OpenAIRealtimeConnection>();
-  
+
   // 활성 방 목록 관리
   const activeRooms = new Map<string, RoomInfo>();
 
@@ -207,7 +207,7 @@ app.prepare().then(() => {
   function updateRoomInfo(roomId: string) {
     const room = io.sockets.adapter.rooms.get(roomId);
     const roomInfo = activeRooms.get(roomId);
-    
+
     if (room && roomInfo) {
       roomInfo.guestCount = room.size - 1; // 호스트 제외한 게스트 수
       broadcastRoomList();
@@ -221,12 +221,12 @@ app.prepare().then(() => {
     // 방 목록 요청
     socket.on("get-room-list", (callback?: (response: { rooms: RoomInfo[] }) => void) => {
       console.log("get-room-list 이벤트 수신, hasCallback:", !!callback);
-      
-      if (typeof callback !== 'function') {
+
+      if (typeof callback !== "function") {
         console.error("get-room-list callback이 함수가 아님:", typeof callback);
         return;
       }
-      
+
       const rooms = Array.from(activeRooms.values());
       callback({ rooms });
     });
@@ -234,18 +234,18 @@ app.prepare().then(() => {
     // 룸 생성
     socket.on("create-room", (hostName: string, callback?: (response: { roomId: string }) => void) => {
       console.log("create-room 이벤트 수신:", { hostName, hasCallback: !!callback });
-      
-      if (typeof callback !== 'function') {
+
+      if (typeof callback !== "function") {
         console.error("callback이 함수가 아님:", typeof callback);
         return;
       }
-      
+
       const roomId = Math.random().toString(36).substring(7);
       socket.join(roomId);
       socket.data.role = "host";
       socket.data.roomId = roomId;
       socket.data.hostName = hostName;
-      
+
       // 방 정보 등록
       const roomInfo: RoomInfo = {
         roomId,
@@ -255,10 +255,10 @@ app.prepare().then(() => {
         maxGuests: 1,
         createdAt: new Date(),
       };
-      
+
       activeRooms.set(roomId, roomInfo);
       broadcastRoomList();
-      
+
       callback({ roomId });
       console.log(`호스트가 룸 생성: ${roomId} (${hostName})`);
     });
@@ -283,10 +283,10 @@ app.prepare().then(() => {
       socket.data.role = "guest";
       socket.data.roomId = roomId;
       socket.to(roomId).emit("user-joined", socket.id);
-      
+
       // 방 정보 업데이트
       updateRoomInfo(roomId);
-      
+
       callback({ success: true });
       console.log(`게스트가 룸 참여: ${roomId} (${roomInfo.hostName})`);
     });
@@ -356,7 +356,7 @@ app.prepare().then(() => {
 
       if (socket.data.roomId) {
         socket.to(socket.data.roomId).emit("user-left", socket.id);
-        
+
         // 호스트가 나가면 방 삭제, 게스트가 나가면 방 정보만 업데이트
         if (socket.data.role === "host") {
           activeRooms.delete(socket.data.roomId);

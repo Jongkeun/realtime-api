@@ -19,6 +19,7 @@ interface OpenAICallbacks {
 }
 
 export function useOpenAIRealtime(callbacks?: OpenAICallbacks) {
+  const callbacksRef = useRef<OpenAICallbacks | undefined>(callbacks);
   const socketRef = useRef<Socket | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>({
     isConnected: false,
@@ -26,6 +27,10 @@ export function useOpenAIRealtime(callbacks?: OpenAICallbacks) {
     lastError: null,
     conversationId: null,
   });
+
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  }, [callbacks]);
 
   // Socket.IO를 통한 OpenAI Realtime API 연결
   const connectToOpenAI = useCallback(async () => {
@@ -78,13 +83,13 @@ export function useOpenAIRealtime(callbacks?: OpenAICallbacks) {
             // 오디오 데이터 처리
             if (message.delta && callbacks?.onAudioResponse) {
               console.log("오디오 델타 수신, 콜백 호출");
-              callbacks.onAudioResponse(message.delta as string);
+              callbacksRef.current?.onAudioResponse?.(message.delta as string);
             }
             break;
           case "response.done":
             console.log("🎯 AI 응답 완료");
             if (callbacks?.onResponseComplete) {
-              callbacks.onResponseComplete();
+              callbacksRef.current?.onResponseComplete?.();
             }
             break;
           case "error":

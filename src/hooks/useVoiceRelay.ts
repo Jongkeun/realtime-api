@@ -37,23 +37,25 @@ export function useVoiceRelay() {
   const { socket, connectionState, createRoom, joinRoom } = useSocket();
 
   // AI 응답 오디오 콜백 설정
-  const handleAIAudioResponse = useCallback(
-    (audioData: string) => {
-      const processor = audioProcessorRef.current;
-      if (processor && connectionState.role === "host") {
-        console.log("🎤 AI 응답 오디오 수신, 스트림으로 재생");
-        processor.playAudioToStream(audioData);
-        setRelayState((prev) => ({ ...prev, currentSpeaker: "ai" }));
+  const handleAIAudioResponse = (audioData: string) => {
+    const processor = audioProcessorRef.current;
+    if (processor && connectionState.role === "host") {
+      console.log("🎤 AI 응답 오디오 수신, 스트림으로 재생");
+      processor.playAudioToStream(audioData);
+      setRelayState((prev) => ({ ...prev, currentSpeaker: "ai" }));
 
-        // 응답 시작시 플래그 설정
-        if (!isProcessingResponseRef.current) {
-          isProcessingResponseRef.current = true;
-          console.log("🤖 AI 응답 처리 시작");
-        }
+      // 응답 시작시 플래그 설정
+      if (!isProcessingResponseRef.current) {
+        isProcessingResponseRef.current = true;
+        console.log("🤖 AI 응답 처리 시작");
       }
-    },
-    [connectionState.role],
-  );
+    } else {
+      console.log("🎤 AI 응답 오디오 수신, 스트림으로 재생 불가", {
+        processor: !!processor,
+        connectionState,
+      });
+    }
+  };
 
   // AI 응답 완료 콜백 설정
   const handleAIResponseComplete = useCallback(() => {
@@ -441,17 +443,6 @@ export function useVoiceRelay() {
           ...prev,
           guestAudioLevel: guestLevel,
         }));
-
-        if (guestLevel > 5) {
-          console.log("🎵 호스트 - 게스트 오디오 수신:", {
-            크기: bufferSize,
-            최대진폭: maxAmplitude,
-            음성감지: hasAudio,
-            게스트레벨: guestLevel.toFixed(1),
-            카운트: audioBufferCountRef.current + 1,
-          });
-          console.log("🎨 호스트 VoiceVisualizer 업데이트:", guestLevel.toFixed(1));
-        }
 
         // 실제 음성이 감지될 때만 처리
         if (hasAudio) {
