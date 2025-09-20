@@ -4,6 +4,9 @@ import { useWebRTC } from "./useWebRTC";
 import { useOpenAIRealtime } from "./useOpenAIRealtime";
 import { AudioProcessor } from "@/utils/audioProcessor";
 
+const BUFFER_SIZE = 4096;
+const MIN_SAMPLES = 1600; // 100ms
+const MIN_BYTES = MIN_SAMPLES * 2;
 interface VoiceRelayState {
   isHostReady: boolean;
   isGuestConnected: boolean;
@@ -141,7 +144,7 @@ export function useVoiceRelay() {
       // WebRTC를 통해 송신 스트림 설정
       webRTC.setOutgoingStream(aiResponseStream);
 
-      console.log("✅ AI 응답 출력 설정 완료");
+      console.log("!! ✅ AI 응답 출력 설정 완료");
       return aiResponseStream;
     } catch (error) {
       console.error("❌ AI 응답 출력 설정 실패:", error);
@@ -459,7 +462,7 @@ export function useVoiceRelay() {
           }
 
           // 충분한 오디오 데이터가 쌓이고 응답 처리중이 아닐 때만 요청
-          if (audioBufferCountRef.current >= 10 && !isProcessingResponseRef.current) {
+          if (audioBufferCountRef.current * BUFFER_SIZE * 2 >= MIN_BYTES && !isProcessingResponseRef.current) {
             conversationTimeoutRef.current = setTimeout(() => {
               console.log("🎤 대화 시작 요청 (버퍼:", audioBufferCountRef.current, ")");
               openAI.startConversation();
