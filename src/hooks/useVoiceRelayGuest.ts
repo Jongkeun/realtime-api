@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSocket } from "./useSocket";
-import { useWebRTC } from "./useWebRTC";
 import { AudioProcessor } from "@/utils/audioProcessor";
+import { useWebRTCGuest } from "./useWebRTCGuest";
 
 interface VoiceRelayState {
   currentSpeaker: "guest" | "ai" | "none";
@@ -33,7 +33,7 @@ export function useVoiceRelayGuest(): VoiceRelayClient {
   // 각 모듈 훅 사용
   const { socket, connectionState, joinRoom } = useSocket();
 
-  const webRTC = useWebRTC(socket, connectionState.role, connectionState.remoteSocketId);
+  const webRTC = useWebRTCGuest(socket);
 
   // 게스트용 마이크 레벨 모니터링 시작
   const startMicrophoneMonitoring = useCallback(() => {

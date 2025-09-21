@@ -4,6 +4,7 @@ import { useWebRTC } from "./useWebRTC";
 import { useOpenAIRealtime } from "./useOpenAIRealtime";
 import { AudioProcessor } from "@/utils/audioProcessor";
 import { BUFFER_SIZE, MIN_BYTES } from "@/app/constants/audio";
+import { useWebRTCHost } from "./useWebRTCHost";
 
 interface VoiceRelayState {
   isHostReady: boolean;
@@ -12,13 +13,11 @@ interface VoiceRelayState {
   isRelayActive: boolean;
   currentSpeaker: "guest" | "ai" | "none";
   error: string | null;
-
   guestAudioLevel: number; // 0-100 범위의 게스트 음성 레벨 (호스트에서 수신)
 }
 
 export interface VoiceRelayHostHook extends VoiceRelayState {
   webRTCState: {
-    localStream: MediaStream | null;
     remoteStream: MediaStream | null;
     connectionState: RTCPeerConnectionState;
   };
@@ -84,50 +83,11 @@ export function useVoiceRelayHost(): VoiceRelayHostHook {
     setRelayState((prev) => ({ ...prev, currentSpeaker: "none" }));
   }, []);
 
-  const webRTC = useWebRTC(socket, connectionState.role, connectionState.remoteSocketId);
+  const webRTC = useWebRTCHost(socket, connectionState.remoteSocketId);
   const openAI = useOpenAIRealtime({
     onAudioResponse: handleAIAudioResponse,
     onResponseComplete: handleAIResponseComplete,
   });
-
-  // 게스트용 마이크 레벨 모니터링 시작
-  const startMicrophoneMonitoring = useCallback(() => {
-    if (connectionState.role !== "guest" || !webRTC.localStream) {
-      return;
-    }
-
-    const processor = audioProcessorRef.current;
-    if (!processor) {
-      console.error("오디오 프로세서가 없습니다");
-      return;
-    }
-
-    try {
-      console.log("🎤 !!! 게스트 마이크 레벨 모니터링 시작");
-
-      processor.setupInputProcessor(webRTC.localStream, (audioBuffer) => {
-        // 오디오 데이터 분석
-        const dataView = new DataView(audioBuffer);
-        const bufferSize = audioBuffer.byteLength;
-        let maxAmplitude = 0;
-
-        // PCM16 데이터에서 진폭 체크 (2바이트씩)
-        for (let i = 0; i < bufferSize; i += 2) {
-          const sample = Math.abs(dataView.getInt16(i, true)); // little-endian
-          maxAmplitude = Math.max(maxAmplitude, sample);
-        }
-
-        // 진폭을 0-100 레벨로 변환 (32767이 최대값)
-        const level = Math.min(100, (maxAmplitude / 32767) * 100);
-        console.log("🎤 !!! 게스트 마이크 레벨:", level, relayState.currentSpeaker);
-        // 호스트는 게스트 마이크 레벨을 따로 저장하지 않음 (guestAudioLevel만 사용)
-      });
-
-      console.log("✅ 게스트 마이크 모니터링 설정 완료");
-    } catch (error) {
-      console.error("❌ 게스트 마이크 모니터링 설정 실패:", error);
-    }
-  }, [connectionState.role, webRTC.localStream]);
 
   // OpenAI 응답을 게스트로 전송하기 위한 오디오 스트림 생성
   const setupAIAudioOutput = useCallback(() => {
@@ -178,10 +138,7 @@ export function useVoiceRelayHost(): VoiceRelayHostHook {
   // 상태 업데이트
   useEffect(() => {
     // 게스트 연결 상태 확인 로직 개선
-    const isGuestConnected =
-      connectionState.role === "host"
-        ? !!connectionState.remoteSocketId // 호스트: 게스트 소켓 ID가 있으면 연결됨
-        : connectionState.role === "guest" && webRTC.isConnected; // 게스트: 자신의 연결 상태
+    const isGuestConnected = !!connectionState.remoteSocketId;
 
     const isRelayActive = webRTC.isConnected && openAI.isConnected && openAI.isSessionActive;
 
@@ -189,16 +146,6 @@ export function useVoiceRelayHost(): VoiceRelayHostHook {
     if (isRelayActive && connectionState.role === "host" && !previousRelayActiveRef.current) {
       console.log("🔄 릴레이 활성화됨, AI 응답 출력 설정 중...");
       setupAIAudioOutput();
-    }
-
-    if (
-      connectionState.role === "guest" &&
-      webRTC.isConnected &&
-      webRTC.localStream &&
-      !previousRelayActiveRef.current
-    ) {
-      console.log("🔄 !!! 게스트 WebRTC 연결됨, 마이크 모니터링 시작 중...");
-      startMicrophoneMonitoring();
     }
 
     // 릴레이가 비활성화되면 오디오 프로세서 정리
@@ -237,13 +184,11 @@ export function useVoiceRelayHost(): VoiceRelayHostHook {
     connectionState,
     webRTC.isConnected,
     webRTC.connectionState,
-    webRTC.localStream,
     webRTC.remoteStream,
     openAI.isConnected,
     openAI.isSessionActive,
     openAI.lastError,
     setupAIAudioOutput,
-    startMicrophoneMonitoring,
   ]);
 
   // 호스트: 방 생성 및 시스템 초기화
@@ -430,7 +375,6 @@ export function useVoiceRelayHost(): VoiceRelayHostHook {
   return {
     ...relayState,
     webRTCState: {
-      localStream: webRTC.localStream,
       remoteStream: webRTC.remoteStream,
       connectionState: webRTC.connectionState,
     },
