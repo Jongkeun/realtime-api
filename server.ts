@@ -4,12 +4,12 @@ import { parse } from "url";
 import next from "next";
 import { Server } from "socket.io";
 import WebSocket from "ws";
+import { SYSTEM_PROMPT, VOICE_CONFIG } from "./prompts/system";
 
 // 환경 변수 로드
 config({ path: ".env.local" });
 
 const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
-const SERVER_HOSTNAME = "localhost";
 const SERVER_PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -90,14 +90,8 @@ class OpenAIRealtimeConnection {
           const sessionConfig = {
             type: "session.update",
             session: {
-              instructions: "당신은 도움이 되는 AI 어시스턴트입니다. 자연스럽고 친근하게 대화해주세요.",
-              voice: "shimmer",
-              input_audio_format: "pcm16",
-              output_audio_format: "pcm16",
-              input_audio_transcription: {
-                model: "whisper-1",
-              },
-              turn_detection: null, // VAD 비활성화로 수동 제어
+              instructions: SYSTEM_PROMPT,
+              ...VOICE_CONFIG,
             },
           };
 
@@ -111,36 +105,6 @@ class OpenAIRealtimeConnection {
         this.ws.on("message", (data) => {
           try {
             const message = JSON.parse(data.toString());
-            console.log("OpenAI 메시지:", message.type, message.event_id ? `(${message.event_id})` : "");
-
-            // 상세 디버깅을 위한 특정 이벤트 전체 로깅
-            if (
-              message.type.includes("input_audio") ||
-              message.type.includes("transcription") ||
-              message.type.includes("conversation.item")
-            ) {
-              console.log("🔍 상세 정보:", JSON.stringify(message, null, 2));
-            }
-
-            // 음성 전사 결과 로깅
-            if (message.type === "conversation.item.input_audio_transcription.completed") {
-              console.log("🎙️  음성 → 텍스트 변환 결과:", message.transcript);
-            }
-
-            // 대화 아이템 생성 시 내용 로깅
-            if (message.type === "conversation.item.created" && message.item?.content) {
-              const content = message.item.content[0];
-              if (content?.type === "input_audio") {
-                console.log("📹 오디오 입력 감지");
-              }
-              if (content?.type === "input_text") {
-                console.log("💬 텍스트 입력:", content.text);
-              }
-              if (content?.transcript) {
-                console.log("📝 전사된 텍스트:", content.transcript);
-              }
-            }
-
             // 클라이언트에 메시지 전달
             io.to(this.socketId).emit("openai-message", message);
           } catch (error) {
@@ -193,9 +157,8 @@ class OpenAIRealtimeConnection {
 
 const app = next({
   dev: IS_DEVELOPMENT,
-  hostname: SERVER_HOSTNAME,
-  port: Number(SERVER_PORT),
 });
+
 const handler = app.getRequestHandler();
 
 app.prepare().then(() => {
@@ -396,6 +359,6 @@ app.prepare().then(() => {
       process.exit(1);
     })
     .listen(Number(SERVER_PORT), () => {
-      console.log(`> Ready on http://${SERVER_HOSTNAME}:${SERVER_PORT}`);
+      console.log(`> Ready on http://localhost:${SERVER_PORT}`);
     });
 });

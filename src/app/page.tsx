@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 export default function HomePage() {
@@ -18,9 +19,9 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-teal-100">
       <div className="container mx-auto px-4 py-16">
         {/* 헤더 */}
-        <div className="text-center mb-12">
-          <div className="text-8xl mb-6">🎭</div>
-          <h1 className="text-5xl font-bold text-gray-800 mb-4">Dubu 음성 대화</h1>
+        <div className="text-center mb-12 flex flex-col items-center">
+          <Image src="/dubu-logo.png" alt="두부 음성 대화" width={200} height={200} className="mb-4" />
+          <h1 className="text-5xl font-bold text-gray-800 mb-4">두부 음성 대화</h1>
           <p className="text-xl text-gray-600 mb-2">3-7세 아이와 AI가 실시간으로 대화하는 특별한 경험</p>
           <p className="text-gray-500">호스트가 아이와 AI 사이의 대화를 안전하게 중계합니다</p>
         </div>

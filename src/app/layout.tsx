@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { GlobalErrorBoundary } from '@/components/ErrorBoundary'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,10 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dubu 음성 대화",
+  title: "두부 음성 대화",
   description: "3-7세 아이와 AI의 실시간 음성 대화 시스템",
   keywords: "아동, AI, 음성대화, 실시간, WebRTC",
-  authors: [{ name: "Dubu Team" }],
+  authors: [{ name: "두부 Team" }],
 };
 
 export const viewport = {
@@ -32,13 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <GlobalErrorBoundary>
-          {children}
-        </GlobalErrorBoundary>
-      </body>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>{children}</body>
     </html>
   );
 }
