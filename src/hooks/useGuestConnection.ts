@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect } from "react";
 
 interface ConnectionSteps {
   audioReady: boolean;
@@ -18,5 +18,5 @@ export function useGuestConnection({ voiceRelay, setConnectionSteps }: UseGuestC
       setConnectionSteps((prev) => ({ ...prev, guestWaiting: false }));
       voiceRelay.startWebRTCConnection();
     }
-  }, [voiceRelay.isGuestConnected, voiceRelay, setConnectionSteps]);
+  }, [voiceRelay.isGuestConnected]);
 }

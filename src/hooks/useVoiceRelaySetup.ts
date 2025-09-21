@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 interface UseVoiceRelaySetupProps {
   voiceRelay: any;
@@ -21,7 +21,7 @@ export function useVoiceRelaySetup({ voiceRelay }: UseVoiceRelaySetupProps) {
           voiceRelay.startVoiceRelay();
         } catch (error) {
           console.warn("음성 릴레이 시작 재시도 중...", error);
-          
+
           // 실패 시 100ms 후 재시도 (최대 5초까지)
           relayTimeoutRef.current = setTimeout(() => {
             if (voiceRelay.webRTCState.connectionState === "connected" && voiceRelay.isAIConnected) {
@@ -41,5 +41,5 @@ export function useVoiceRelaySetup({ voiceRelay }: UseVoiceRelaySetupProps) {
         clearTimeout(relayTimeoutRef.current);
       }
     };
-  }, [voiceRelay.webRTCState.connectionState, voiceRelay.isAIConnected, voiceRelay]);
+  }, [voiceRelay.webRTCState.connectionState, voiceRelay.isAIConnected]);
 }
