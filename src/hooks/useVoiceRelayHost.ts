@@ -3,8 +3,8 @@ import { useSocket } from "./useSocket";
 import { useWebRTC } from "./useWebRTC";
 import { useOpenAIRealtime } from "./useOpenAIRealtime";
 import { AudioProcessor } from "@/utils/audioProcessor";
+import { BUFFER_SIZE, MIN_BYTES } from "@/app/constants/audio";
 
-const BUFFER_SIZE = 4096;
 interface VoiceRelayState {
   isHostReady: boolean;
   isGuestConnected: boolean;
@@ -12,11 +12,30 @@ interface VoiceRelayState {
   isRelayActive: boolean;
   currentSpeaker: "guest" | "ai" | "none";
   error: string | null;
-  microphoneLevel: number; // 0-100 범위의 마이크 입력 레벨 (게스트용)
+
   guestAudioLevel: number; // 0-100 범위의 게스트 음성 레벨 (호스트에서 수신)
 }
 
-export function useVoiceRelay() {
+export interface VoiceRelayHostHook extends VoiceRelayState {
+  webRTCState: {
+    localStream: MediaStream | null;
+    remoteStream: MediaStream | null;
+    connectionState: RTCPeerConnectionState;
+  };
+  openAIState: {
+    isConnected: boolean;
+    conversationId: string | null;
+  };
+  initialize: (hostName: string) => Promise<string | null>;
+  startWebRTCConnection: () => Promise<void>;
+  startVoiceRelay: () => void;
+
+  setupAIAudioOutput: () => MediaStream | null;
+  clearError: () => void;
+  cleanup: () => void;
+}
+
+export function useVoiceRelayHost(): VoiceRelayHostHook {
   const audioProcessorRef = useRef<AudioProcessor | null>(null);
   const previousRelayActiveRef = useRef(false);
   const conversationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -30,28 +49,28 @@ export function useVoiceRelay() {
     isRelayActive: false,
     currentSpeaker: "none",
     error: null,
-    microphoneLevel: 0,
+
     guestAudioLevel: 0,
   });
 
   // 각 모듈 훅 사용
-  const { socket, connectionState, createRoom, joinRoom } = useSocket();
+  const { socket, connectionState, createRoom } = useSocket();
 
   // AI 응답 오디오 콜백 설정
   const handleAIAudioResponse = (audioData: string) => {
     const processor = audioProcessorRef.current;
     if (processor && connectionState.role === "host") {
-      console.log("🎤 AI 응답 오디오 수신, 스트림으로 재생");
+      console.log("🎤 !!! AI 응답 오디오 수신, 스트림으로 재생");
       processor.enqueueAIResponse(audioData);
       setRelayState((prev) => ({ ...prev, currentSpeaker: "ai" }));
 
       // 응답 시작시 플래그 설정
       if (!isProcessingResponseRef.current) {
         isProcessingResponseRef.current = true;
-        console.log("🤖 AI 응답 처리 시작");
+        console.log("🤖 !!! AI 응답 처리 시작");
       }
     } else {
-      console.log("🎤 AI 응답 오디오 수신, 스트림으로 재생 불가", {
+      console.log("🎤 !!! AI 응답 오디오 수신, 스트림으로 재생 불가", {
         processor: !!processor,
         connectionState,
       });
@@ -84,7 +103,7 @@ export function useVoiceRelay() {
     }
 
     try {
-      console.log("🎤 게스트 마이크 레벨 모니터링 시작");
+      console.log("🎤 !!! 게스트 마이크 레벨 모니터링 시작");
 
       processor.setupInputProcessor(webRTC.localStream, (audioBuffer) => {
         // 오디오 데이터 분석
@@ -100,12 +119,8 @@ export function useVoiceRelay() {
 
         // 진폭을 0-100 레벨로 변환 (32767이 최대값)
         const level = Math.min(100, (maxAmplitude / 32767) * 100);
-
-        setRelayState((prev) => ({
-          ...prev,
-          microphoneLevel: level,
-          currentSpeaker: level > 10 ? "guest" : "none",
-        }));
+        console.log("🎤 !!! 게스트 마이크 레벨:", level, relayState.currentSpeaker);
+        // 호스트는 게스트 마이크 레벨을 따로 저장하지 않음 (guestAudioLevel만 사용)
       });
 
       console.log("✅ 게스트 마이크 모니터링 설정 완료");
@@ -170,37 +185,11 @@ export function useVoiceRelay() {
 
     const isRelayActive = webRTC.isConnected && openAI.isConnected && openAI.isSessionActive;
 
-    // 디버그 로그
-    console.log("🎯 VoiceRelay 상태 업데이트:", {
-      role: connectionState.role,
-      isConnected: connectionState.isConnected,
-      remoteSocketId: connectionState.remoteSocketId,
-      webRTCConnected: webRTC.isConnected,
-      webRTCState: webRTC.connectionState,
-      webRTCLocalStream: !!webRTC.localStream,
-      webRTCRemoteStream: !!webRTC.remoteStream,
-      openAIConnected: openAI.isConnected,
-      openAISessionActive: openAI.isSessionActive,
-      calculatedGuestConnected: isGuestConnected,
-      calculatedRelayActive: isRelayActive,
-    });
-
     // 호스트에서 릴레이가 활성화되면 AI 응답 출력 자동 설정
     if (isRelayActive && connectionState.role === "host" && !previousRelayActiveRef.current) {
       console.log("🔄 릴레이 활성화됨, AI 응답 출력 설정 중...");
       setupAIAudioOutput();
     }
-
-    // 게스트에서 WebRTC가 연결되면 마이크 모니터링 자동 시작
-    console.log("🔍 게스트 마이크 모니터링 조건 확인:", {
-      role: connectionState.role,
-      isConnected: webRTC.isConnected,
-      hasLocalStream: !!webRTC.localStream,
-      localStreamId: webRTC.localStream?.id,
-      previousRelayActive: previousRelayActiveRef.current,
-      shouldStart:
-        connectionState.role === "guest" && webRTC.isConnected && webRTC.localStream && !previousRelayActiveRef.current,
-    });
 
     if (
       connectionState.role === "guest" &&
@@ -208,7 +197,7 @@ export function useVoiceRelay() {
       webRTC.localStream &&
       !previousRelayActiveRef.current
     ) {
-      console.log("🔄 게스트 WebRTC 연결됨, 마이크 모니터링 시작 중...");
+      console.log("🔄 !!! 게스트 WebRTC 연결됨, 마이크 모니터링 시작 중...");
       startMicrophoneMonitoring();
     }
 
@@ -258,7 +247,7 @@ export function useVoiceRelay() {
   ]);
 
   // 호스트: 방 생성 및 시스템 초기화
-  const initializeAsHost = useCallback(
+  const initialize = useCallback(
     async (hostName: string): Promise<string | null> => {
       try {
         // 오디오 프로세서 초기화
@@ -304,62 +293,8 @@ export function useVoiceRelay() {
     [createRoom, openAI],
   );
 
-  // 게스트: 방 참여
-  const joinAsGuest = useCallback(
-    async (roomId: string): Promise<boolean> => {
-      try {
-        // 오디오 프로세서 초기화
-        const processor = audioProcessorRef.current;
-        if (!processor) {
-          throw new Error("오디오 프로세서가 초기화되지 않았습니다");
-        }
-
-        const audioInitialized = await processor.initializeAudioContext();
-        if (!audioInitialized) {
-          throw new Error("오디오 컨텍스트 초기화 실패");
-        }
-
-        // 게스트 마이크 스트림은 createAnswer에서 생성됨
-        console.log("🎤 게스트 마이크 스트림은 WebRTC 연결 시 자동 생성됩니다");
-
-        // 소켓 방 참여
-        const success = await new Promise<boolean>((resolve, reject) => {
-          joinRoom(roomId, (success, error) => {
-            if (success) {
-              console.log("게스트 참여 완료, 방 ID:", roomId);
-              resolve(true);
-            } else {
-              reject(new Error(error || "방 참여 실패"));
-            }
-          });
-
-          // 타임아웃 설정
-          setTimeout(() => {
-            reject(new Error("방 참여 타임아웃"));
-          }, 5000);
-        });
-
-        return success;
-      } catch (error) {
-        console.error("게스트 참여 실패:", error);
-        setRelayState((prev) => ({
-          ...prev,
-          error: error instanceof Error ? error.message : "게스트 참여 실패",
-        }));
-        return false;
-      }
-    },
-    [joinRoom],
-  );
-
   // WebRTC 연결 시작 (호스트가 게스트 참여 후 호출)
   const startWebRTCConnection = useCallback(async () => {
-    console.log("startWebRTCConnection 호출됨:", {
-      role: connectionState.role,
-      remoteSocketId: connectionState.remoteSocketId,
-      webRTCAvailable: !!webRTC.createOffer,
-    });
-
     if (connectionState.role !== "host" || !connectionState.remoteSocketId) {
       console.warn("호스트가 아니거나 원격 소켓이 없습니다:", {
         role: connectionState.role,
@@ -381,16 +316,8 @@ export function useVoiceRelay() {
     }
   }, [connectionState.role, connectionState.remoteSocketId, webRTC]);
 
-  // 음성 릴레이 시작 (호스트 전용)
+  // 음성 릴레이 시작
   const startVoiceRelay = useCallback(() => {
-    console.log("startVoiceRelay 호출됨:", {
-      role: connectionState.role,
-      remoteStream: !!webRTC.remoteStream,
-      audioProcessor: !!audioProcessorRef.current,
-      openAIConnected: openAI.isConnected,
-      openAISessionActive: openAI.isSessionActive,
-    });
-
     if (connectionState.role !== "host" || !webRTC.remoteStream) {
       console.warn("호스트가 아니거나 원격 스트림이 없습니다:", {
         role: connectionState.role,
@@ -457,9 +384,6 @@ export function useVoiceRelay() {
           if (conversationTimeoutRef.current) {
             clearTimeout(conversationTimeoutRef.current);
           }
-          const MIN_SPEECH_MS = 1000; // 최소 1초
-          const MIN_SAMPLES = 16000 * (MIN_SPEECH_MS / 1000); // 16000
-          const MIN_BYTES = MIN_SAMPLES * 2; // PCM16 (2바이트)
           // 충분한 오디오 데이터가 쌓이고 응답 처리중이 아닐 때만 요청
           if (audioBufferCountRef.current * BUFFER_SIZE * 2 >= MIN_BYTES && !isProcessingResponseRef.current) {
             conversationTimeoutRef.current = setTimeout(() => {
@@ -469,8 +393,6 @@ export function useVoiceRelay() {
               audioBufferCountRef.current = 0; // 카운트 리셋
             }, 2000); // 2초 후 응답 요청
           }
-        } else {
-          // console.log("🔇 무음 또는 노이즈만 감지됨, 무시");
         }
       });
 
@@ -485,12 +407,10 @@ export function useVoiceRelay() {
     }
   }, [connectionState.role, webRTC.remoteStream, openAI]);
 
-  // 에러 클리어
   const clearError = useCallback(() => {
     setRelayState((prev) => ({ ...prev, error: null }));
   }, []);
 
-  // 전체 시스템 정리
   const cleanup = useCallback(() => {
     if (audioProcessorRef.current) {
       audioProcessorRef.current.cleanup();
@@ -498,7 +418,6 @@ export function useVoiceRelay() {
     openAI.disconnect();
   }, [openAI]);
 
-  // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
       if (audioProcessorRef.current) {
@@ -506,13 +425,10 @@ export function useVoiceRelay() {
       }
       openAI.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
-    // 상태
     ...relayState,
-    connectionState,
     webRTCState: {
       localStream: webRTC.localStream,
       remoteStream: webRTC.remoteStream,
@@ -524,11 +440,9 @@ export function useVoiceRelay() {
     },
 
     // 액션
-    initializeAsHost,
-    joinAsGuest,
+    initialize,
     startWebRTCConnection,
     startVoiceRelay,
-    startMicrophoneMonitoring,
     setupAIAudioOutput,
     clearError,
     cleanup,

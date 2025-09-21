@@ -248,13 +248,6 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
       // 호스트는 마이크 없이 Offer 생성 (게스트의 음성만 수신)
       console.log("🎵 호스트는 마이크 없이 Offer 생성 (게스트 음성 수신용)");
       peerConnection.addTransceiver("audio", { direction: "recvonly" });
-      // PeerConnection 상태 확인
-      console.log("PeerConnection 초기 상태:", {
-        connectionState: peerConnection.connectionState,
-        iceGatheringState: peerConnection.iceGatheringState,
-        iceConnectionState: peerConnection.iceConnectionState,
-        signalingState: peerConnection.signalingState,
-      });
 
       // **호스트용**: 게스트의 음성만 수신하는 Offer 생성
       console.log("📝 Offer 생성 중... (게스트 음성 수신용)");
@@ -263,35 +256,9 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
         offerToReceiveVideo: false,
       });
 
-      console.log("Offer 생성 완료:", offer.type);
-
-      console.log("⚙️ setLocalDescription 시작...1");
-      console.log("Offer 내용:", offer);
-      console.log("PeerConnection 상태:", {
-        connectionState: peerConnection.connectionState,
-        iceGatheringState: peerConnection.iceGatheringState,
-        iceConnectionState: peerConnection.iceConnectionState,
-        signalingState: peerConnection.signalingState,
-      });
-
       // setLocalDescription 실행
       try {
-        console.log("⏳ setLocalDescription 시작...");
-        console.log("setLocalDescription 호출 중...");
-
         await peerConnection.setLocalDescription(offer);
-        console.log("✅ peerConnection.setLocalDescription 성공");
-
-        // ICE gathering 상태 확인
-        console.log("🧊 ICE gathering 상태:", peerConnection.iceGatheringState);
-
-        // 성공 후 상태 확인
-        console.log("성공 후 상태:", {
-          connectionState: peerConnection.connectionState,
-          iceGatheringState: peerConnection.iceGatheringState,
-          iceConnectionState: peerConnection.iceConnectionState,
-          signalingState: peerConnection.signalingState,
-        });
       } catch (error) {
         console.error("❌ setLocalDescription 실패:", error);
         throw error;
@@ -385,16 +352,6 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
   const createAnswer = useCallback(
     async (data: { offer: RTCSessionDescriptionInit; sessionId?: string }, fromSocketId: string) => {
       const { offer, sessionId } = data;
-      console.log("🎯 ===== Answer 생성 시작 =====");
-      console.log("📋 초기 상태:", {
-        socket: !!socket,
-        role,
-        fromSocketId,
-        offerType: offer.type,
-        socketConnected: socket?.connected,
-        receivedSessionId: sessionId,
-        offerSdp: offer.sdp?.substring(0, 100) + "...",
-      });
 
       // 호스트로부터 받은 세션 ID 사용
       if (sessionId) {
@@ -442,13 +399,6 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
         });
 
         await peerConnection.setRemoteDescription(offer);
-        console.log("✅ 원격 설명 설정 완료");
-        console.log("📊 PeerConnection 상태:", {
-          connectionState: peerConnection.connectionState,
-          iceConnectionState: peerConnection.iceConnectionState,
-          iceGatheringState: peerConnection.iceGatheringState,
-          signalingState: peerConnection.signalingState,
-        });
 
         // 큐에 저장된 ICE candidate들 처리 (비동기로 처리하여 Answer 생성 방해하지 않음)
         console.log("🔄 큐에 저장된 ICE candidate들 처리 시작...");
@@ -461,14 +411,6 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
           });
         console.log("✅ ICE candidate 처리를 백그라운드에서 시작함");
 
-        // PeerConnection 상태 재확인
-        console.log("📊 ICE candidate 처리 후 PeerConnection 상태:", {
-          connectionState: peerConnection.connectionState,
-          iceConnectionState: peerConnection.iceConnectionState,
-          iceGatheringState: peerConnection.iceGatheringState,
-          signalingState: peerConnection.signalingState,
-        });
-
         // PeerConnection 상태 확인 (signalingState는 'closed'가 될 수 없으므로 connectionState 확인)
         if (peerConnection.connectionState === "closed") {
           console.error("❌ PeerConnection이 닫혔습니다. Answer 생성 중단");
@@ -476,23 +418,11 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
         }
 
         console.log("📝 Answer 생성 중...");
-        console.log("📊 Answer 생성 전 상태:", {
-          connectionState: peerConnection.connectionState,
-          iceConnectionState: peerConnection.iceConnectionState,
-          iceGatheringState: peerConnection.iceGatheringState,
-          signalingState: peerConnection.signalingState,
-        });
 
         const answer = await peerConnection.createAnswer();
         console.log("✅ Answer 생성 완료");
-        console.log("📋 Answer 상세:", {
-          type: answer.type,
-          sdpLength: answer.sdp?.length,
-          sdpPreview: answer.sdp?.substring(0, 200) + "...",
-        });
 
         console.log("⚙️ setLocalDescription 시작...");
-        console.log("Answer 내용:", answer);
 
         // setLocalDescription 실행 (타임아웃 제거)
         try {
@@ -515,16 +445,6 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
 
         // Answer 전송 후 큐에 저장된 ICE candidate들 다시 처리
         await flushPendingCandidates();
-
-        // 연결 상태 확인
-        setTimeout(() => {
-          console.log("🔍 Answer 전송 후 연결 상태:", {
-            connectionState: peerConnection.connectionState,
-            iceConnectionState: peerConnection.iceConnectionState,
-            iceGatheringState: peerConnection.iceGatheringState,
-            signalingState: peerConnection.signalingState,
-          });
-        }, 2000);
       } catch (error) {
         console.error("❌ Answer 생성 실패:", error);
       }
@@ -556,16 +476,6 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
 
         // 큐에 저장된 ICE candidate들 처리
         await flushPendingCandidates();
-
-        // 연결 상태 확인
-        setTimeout(() => {
-          console.log("🔍 Answer 처리 후 연결 상태:", {
-            connectionState: peerConnectionRef.current?.connectionState,
-            iceConnectionState: peerConnectionRef.current?.iceConnectionState,
-            iceGatheringState: peerConnectionRef.current?.iceGatheringState,
-            signalingState: peerConnectionRef.current?.signalingState,
-          });
-        }, 2000);
       } catch (error) {
         console.error("Answer 처리 실패:", error);
       }
@@ -695,13 +605,6 @@ export function useWebRTC(socket: TypedSocket | null, role: UserRole | null, rem
         const track = stream?.getAudioTracks()[0] || null;
         await aiSenderRef.current.replaceTrack(track);
         console.log("📡 replaceTrack 완료:", track?.id);
-        // // 새 스트림 추가
-        // if (stream) {
-        //   stream.getTracks().forEach((track) => {
-        //     peerConnection.addTrack(track, stream);
-        //     console.log("!! 📡 송신 트랙 추가:", track.kind, track.id);
-        //   });
-        // }
 
         setWebRTCState((prev) => ({
           ...prev,

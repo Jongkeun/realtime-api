@@ -109,7 +109,7 @@ export function useSocket() {
     console.log("get-room-list 이벤트 전송 중...");
     socketRef.current.emit("get-room-list", ({ rooms }) => {
       console.log("서버로부터 rooms 응답 받음:", rooms);
-      // callback(rooms);
+      callback(rooms);
       setRoomList(rooms);
     });
   };

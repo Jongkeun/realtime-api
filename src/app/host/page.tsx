@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useVoiceRelay } from "@/hooks/useVoiceRelay";
+import { useVoiceRelayHost } from "@/hooks/useVoiceRelayHost";
 import VoiceVisualizer from "@/components/VoiceVisualizer";
 import Link from "next/link";
 
@@ -16,7 +16,7 @@ export default function HostPage() {
     guestWaiting: true,
   });
 
-  const voiceRelay = useVoiceRelay();
+  const voiceRelay = useVoiceRelayHost();
 
   // 호스트 초기화
   const handleInitialize = async () => {
@@ -30,7 +30,7 @@ export default function HostPage() {
 
     try {
       // 호스트는 마이크 권한이 필요하지 않음
-      const createdRoomId = await voiceRelay.initializeAsHost(hostName.trim());
+      const createdRoomId = await voiceRelay.initialize(hostName.trim());
       if (createdRoomId) {
         setRoomId(createdRoomId);
         setConnectionSteps((prev) => ({

@@ -1,8 +1,4 @@
-// 오디오 처리를 위한 상수들
-const INPUT_TARGET_SR = 16000; // OpenAI Realtime 입력 권장 (PCM16)
-const OUTPUT_SAMPLE_RATE = 24000; // OpenAI Realtime 출력(PCM16) 기본
-const BUFFER_SIZE = 4096;
-const CHANNELS = 1; // 모노
+import { BUFFER_SIZE, CHANNELS, INPUT_TARGET_SAMPLE_RATE, OUTPUT_SAMPLE_RATE } from "@/app/constants/audio";
 
 export class AudioProcessor {
   private audioContext: AudioContext | null = null;
@@ -22,6 +18,8 @@ export class AudioProcessor {
   // AI 응답 오디오 재생용 큐
   private playQueue: AudioBuffer[] = [];
   private isPlaying = false;
+
+  private nextStartTime: number = 0;
 
   // 오디오 컨텍스트 초기화
   async initializeAudioContext(): Promise<boolean> {
@@ -63,12 +61,8 @@ export class AudioProcessor {
         const inFloat = event.inputBuffer.getChannelData(0); // 원본 float32 (보통 48kHz)
         const inRate = event.inputBuffer.sampleRate || this.audioContext!.sampleRate;
 
-        // (디버깅) 파형이 살아있는지 간단체크
-        // const peek = Math.max(...inFloat.map(v => Math.abs(v)));
-        // if (peek > 0.01) console.log("🎙️ mic peak:", peek.toFixed(4));
-
         // 4) 다운샘플링 → 16k float32
-        const down = this.downsampleFloat32(inFloat, inRate, INPUT_TARGET_SR);
+        const down = this.downsampleFloat32(inFloat, inRate, INPUT_TARGET_SAMPLE_RATE);
 
         // 5) Float32 → PCM16 (리틀엔디언) 변환
         const pcm16 = this.floatToPCM16(down);
@@ -176,15 +170,16 @@ export class AudioProcessor {
     const sourceNode = this.audioContext.createBufferSource();
     sourceNode.buffer = buffer;
 
-    // 필요 시 개별 게인(전송 레벨 조정)
     const g = this.audioContext.createGain();
     g.gain.value = 1.0;
 
     sourceNode.connect(g);
     g.connect(this.streamDestination);
 
-    sourceNode.start(0);
-    // console.log("🔊 AI 오디오 재생:", buffer.duration.toFixed(2), "s");
+    // 🔑 타이밍 보정: 앞 버퍼 끝난 시점에 정확히 이어서 재생
+    const startAt = Math.max(this.audioContext.currentTime, this.nextStartTime);
+    sourceNode.start(startAt);
+    this.nextStartTime = startAt + buffer.duration;
 
     sourceNode.onended = () => {
       this.playNextInQueue();
