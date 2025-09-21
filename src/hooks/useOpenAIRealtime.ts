@@ -36,7 +36,17 @@ export function useOpenAIRealtime(callbacks?: OpenAICallbacks) {
   const connectToOpenAI = useCallback(async () => {
     try {
       // Socket.IO 서버에 연결
-      const socket = io("http://172.30.1.14:3000");
+      const getServerUrl = () => {
+        // 환경 변수가 있으면 사용
+        if (process.env.NEXT_PUBLIC_SERVER_URL) {
+          return process.env.NEXT_PUBLIC_SERVER_URL;
+        }
+
+        // 배포 환경에서는 현재 도메인 사용
+        return `${window.location.protocol}//${window.location.host}`;
+      };
+
+      const socket = io(getServerUrl());
 
       socket.on("connect", () => {
         console.log("Socket.IO 서버에 연결됨");

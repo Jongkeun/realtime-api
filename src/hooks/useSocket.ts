@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import type { ServerToClientEvents, ClientToServerEvents, ConnectionState, RoomInfo } from "@/types/socket";
 
@@ -98,7 +98,7 @@ export function useSocket() {
     });
   };
 
-  const getRoomList = (callback: (rooms: RoomInfo[]) => void) => {
+  const getRoomList = useCallback((callback: (rooms: RoomInfo[]) => void) => {
     console.log("getRoomList 호출됨, hasSocket:", !!socketRef.current);
 
     if (!socketRef.current) {
@@ -112,7 +112,7 @@ export function useSocket() {
       callback(rooms);
       setRoomList(rooms);
     });
-  };
+  }, []);
 
   return {
     socket: socketRef.current,
