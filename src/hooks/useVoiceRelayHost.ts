@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSocket } from "./useSocket";
-import { useWebRTC } from "./useWebRTC";
 import { useOpenAIRealtime } from "./useOpenAIRealtime";
 import { AudioProcessor } from "@/utils/audioProcessor";
-import { BUFFER_SIZE, MIN_BYTES } from "@/app/constants/audio";
+import { BUFFER_SIZE, MIN_BYTES } from "@/constants/audio";
 import { useWebRTCHost } from "./useWebRTCHost";
 
 interface VoiceRelayState {

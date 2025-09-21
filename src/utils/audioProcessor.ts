@@ -1,4 +1,4 @@
-import { BUFFER_SIZE, CHANNELS, INPUT_TARGET_SAMPLE_RATE, OUTPUT_SAMPLE_RATE } from "@/app/constants/audio";
+import { BUFFER_SIZE, CHANNELS, INPUT_TARGET_SAMPLE_RATE, OUTPUT_SAMPLE_RATE } from "@/constants/audio";
 
 export class AudioProcessor {
   private audioContext: AudioContext | null = null;

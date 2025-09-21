@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSocket } from "@/hooks/useSocket";
 import { useMicrophonePermission } from "@/hooks/useMicrophonePermission";
-import { PageHeader, RoomList, JoinRoomSection, UsageInstructions, Navigation } from "./guest-room";
+import { PageHeader, RoomList, JoinRoomSection, UsageInstructions, Navigation } from "@/components/guest";
 
 interface GuestRoomListProps {
   onJoinRoom: (roomId: string) => Promise<void>;
