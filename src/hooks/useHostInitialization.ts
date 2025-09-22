@@ -10,7 +10,7 @@ interface ConnectionSteps {
 
 export function useHostInitialization(voiceRelay: VoiceRelayHostHook) {
   const [roomId, setRoomId] = useState<string | null>(null);
-  const [hostName, setHostName] = useState<string>("테스트");
+  const [hostName, setHostName] = useState<string>("호스트 이름");
   const [isInitializing, setIsInitializing] = useState(false);
   const [connectionSteps, setConnectionSteps] = useState<ConnectionSteps>({
     audioReady: false,
