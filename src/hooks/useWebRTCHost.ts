@@ -26,6 +26,7 @@ export function useWebRTCHost(socket: TypedSocket | null, remoteSocketId: string
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidate[]>([]);
   const currentSessionIdRef = useRef<string | null>(null);
+  const remoteStreamProcessedRef = useRef<boolean>(false);
   const [webrtcState, setWebRTCState] = useState<WebRTCHostState>({
     remoteStream: null,
     outgoingStream: null,
@@ -62,6 +63,15 @@ export function useWebRTCHost(socket: TypedSocket | null, remoteSocketId: string
     (preserveSessionId: boolean = false) => {
       const currentSession = currentSessionIdRef.current;
       cleanupPeerConnection(false);
+
+      // 🆕 WebRTC 상태 초기화
+      setWebRTCState((prev) => ({
+        ...prev,
+        remoteStream: null,
+        outgoingStream: null,
+        isConnected: false,
+        connectionState: "new",
+      }));
 
       if (!preserveSessionId || !currentSession) {
         currentSessionIdRef.current = Math.random().toString(36).substring(2, 15);
@@ -107,16 +117,15 @@ export function useWebRTCHost(socket: TypedSocket | null, remoteSocketId: string
       // 게스트로부터 오는 음성 스트림 수신 (최초 한 번만)
       peerConnection.ontrack = (event) => {
         console.log("🎧 [HOST] 게스트 음성 트랙 수신:", event.track);
-        
+
         setWebRTCState((prev) => {
           // 이미 remoteStream이 있다면 스킵 (중복 호출 방지)
           if (prev.remoteStream) {
             return prev;
           }
-          
           const remoteStream = new MediaStream([event.track]);
           setupAudioElement(remoteStream, { muted: true });
-          
+
           return {
             ...prev,
             remoteStream,
