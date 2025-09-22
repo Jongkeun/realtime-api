@@ -122,6 +122,7 @@ export function useVoiceRelayHost(): VoiceRelayHostHook {
       console.error("❌ AI 응답 출력 설정 실패:", error);
       return null;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionState.role, webRTC.isConnected]);
 
   // 오디오 프로세서 초기화
@@ -369,6 +370,7 @@ export function useVoiceRelayHost(): VoiceRelayHostHook {
       }
       openAI.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

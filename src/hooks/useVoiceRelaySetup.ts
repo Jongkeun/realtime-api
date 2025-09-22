@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
+import { VoiceRelayHostHook } from "./useVoiceRelayHost";
 
 interface UseVoiceRelaySetupProps {
-  voiceRelay: any;
+  voiceRelay: VoiceRelayHostHook;
 }
 
 export function useVoiceRelaySetup({ voiceRelay }: UseVoiceRelaySetupProps) {
@@ -41,5 +42,6 @@ export function useVoiceRelaySetup({ voiceRelay }: UseVoiceRelaySetupProps) {
         clearTimeout(relayTimeoutRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceRelay.webRTCState.connectionState, voiceRelay.isAIConnected]);
 }

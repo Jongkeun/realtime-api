@@ -10,7 +10,7 @@ export class RoomManager {
 
   createRoom(hostSocketId: string, hostName: string): string {
     const roomId = this.generateRoomId();
-    
+
     const roomInfo: RoomInfo = {
       roomId,
       hostSocketId,
@@ -22,12 +22,12 @@ export class RoomManager {
 
     this.activeRooms.set(roomId, roomInfo);
     this.broadcastRoomList();
-    
+
     console.log(`호스트가 룸 생성: ${roomId} (${hostName})`);
     return roomId;
   }
 
-  joinRoom(roomId: string, guestSocketId: string): { success: boolean; error?: string } {
+  joinRoom(roomId: string): { success: boolean; error?: string } {
     const room = this.io.sockets.adapter.rooms.get(roomId);
     const roomInfo = this.activeRooms.get(roomId);
 
@@ -42,7 +42,7 @@ export class RoomManager {
 
     this.updateRoomInfo(roomId);
     console.log(`게스트가 룸 참여: ${roomId} (${roomInfo.hostName})`);
-    
+
     return { success: true };
   }
 

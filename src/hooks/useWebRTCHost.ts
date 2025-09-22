@@ -288,6 +288,7 @@ export function useWebRTCHost(socket: TypedSocket | null, remoteSocketId: string
       console.log("🧹 [HOST] useWebRTCHost 정리");
       cleanupPeerConnection();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

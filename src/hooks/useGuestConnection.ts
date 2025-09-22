@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { VoiceRelayHostHook } from "./useVoiceRelayHost";
 
 interface ConnectionSteps {
   audioReady: boolean;
@@ -8,7 +9,7 @@ interface ConnectionSteps {
 }
 
 interface UseGuestConnectionProps {
-  voiceRelay: any;
+  voiceRelay: VoiceRelayHostHook;
   setConnectionSteps: React.Dispatch<React.SetStateAction<ConnectionSteps>>;
 }
 
@@ -18,5 +19,6 @@ export function useGuestConnection({ voiceRelay, setConnectionSteps }: UseGuestC
       setConnectionSteps((prev) => ({ ...prev, guestWaiting: false }));
       voiceRelay.startWebRTCConnection();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceRelay.isGuestConnected]);
 }

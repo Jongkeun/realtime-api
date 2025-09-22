@@ -40,7 +40,7 @@ export class SocketEventHandlers {
       if (!this.isValidCallback(callback, "create-room")) return;
 
       const roomId = this.roomManager.createRoom(socket.id, hostName);
-      
+
       socket.join(roomId);
       socket.data.role = "host";
       socket.data.roomId = roomId;
@@ -51,8 +51,8 @@ export class SocketEventHandlers {
 
     // 룸 참여
     socket.on("join-room", (roomId: string, callback) => {
-      const result = this.roomManager.joinRoom(roomId, socket.id);
-      
+      const result = this.roomManager.joinRoom(roomId);
+
       if (result.success) {
         socket.join(roomId);
         socket.data.role = "guest";
@@ -90,7 +90,7 @@ export class SocketEventHandlers {
       try {
         const openaiConnection = new OpenAIRealtimeConnection(socket.id, this.apiKey);
         await openaiConnection.connect(this.io);
-        
+
         this.openaiConnections.set(socket.id, openaiConnection);
         callback({ success: true });
         console.log(`OpenAI 연결 성공: ${socket.id}`);
@@ -104,7 +104,7 @@ export class SocketEventHandlers {
     // OpenAI로 메시지 전송
     socket.on("send-openai-message", (message: OpenAIMessage) => {
       const openaiConnection = this.openaiConnections.get(socket.id);
-      
+
       if (openaiConnection?.isConnected) {
         openaiConnection.sendMessage(message);
       } else {
@@ -115,7 +115,7 @@ export class SocketEventHandlers {
     // OpenAI 연결 해제 요청
     socket.on("disconnect-openai", () => {
       const openaiConnection = this.openaiConnections.get(socket.id);
-      
+
       if (openaiConnection) {
         openaiConnection.disconnect();
         this.openaiConnections.delete(socket.id);
@@ -156,17 +156,14 @@ export class SocketEventHandlers {
     }
   }
 
-  private isValidCallback<T>(
-    callback: unknown, 
-    eventName: string
-  ): callback is (response: T) => void {
+  private isValidCallback<T>(callback: unknown, eventName: string): callback is (response: T) => void {
     console.log(`${eventName} 이벤트 수신, hasCallback:`, !!callback);
-    
+
     if (typeof callback !== "function") {
       console.error(`${eventName} callback이 함수가 아님:`, typeof callback);
       return false;
     }
-    
+
     return true;
   }
 }

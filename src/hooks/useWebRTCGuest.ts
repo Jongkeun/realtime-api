@@ -196,6 +196,7 @@ export function useWebRTCGuest(socket: TypedSocket | null) {
         console.error("❌ [GUEST] Answer 생성 실패:", error);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [socket, initializePeerConnection, initializeLocalStream],
   );
 

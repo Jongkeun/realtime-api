@@ -23,6 +23,7 @@ export default function GuestRoomList({ onJoinRoom, isJoining }: GuestRoomListPr
         setLoadingRooms(false);
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, socket?.connected]);
 
   const handleJoinRoom = async () => {

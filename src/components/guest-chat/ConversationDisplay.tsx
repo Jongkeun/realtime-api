@@ -1,6 +1,5 @@
 import ConversationSpeaker from "./ConversationSpeaker";
 import VoiceVisualizerSection from "./VoiceVisualizerSection";
-import DebugInfo from "./DebugInfo";
 
 type Speaker = "guest" | "ai" | "none";
 
@@ -31,11 +30,6 @@ export default function ConversationDisplay({
         isActive={webRTCState.connectionState === "connected"}
         microphoneLevel={microphoneLevel}
       />
-
-      {/* <DebugInfo
-        microphoneLevel={microphoneLevel}
-        webRTCState={webRTCState}
-      /> */}
     </div>
   );
 }
