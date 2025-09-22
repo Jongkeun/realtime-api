@@ -62,7 +62,6 @@ export function useVoiceRelayGuest(): VoiceRelayClient {
 
         // 진폭을 0-100 레벨로 변환 (32767이 최대값)
         const level = Math.min(100, (maxAmplitude / 32767) * 100);
-        console.log("🎤 !!! 게스트 마이크 레벨:", level);
         setRelayState((prev) => ({
           ...prev,
           microphoneLevel: level,

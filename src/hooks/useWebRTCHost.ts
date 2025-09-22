@@ -104,15 +104,24 @@ export function useWebRTCHost(socket: TypedSocket | null, remoteSocketId: string
         }
       };
 
-      // 게스트로부터 오는 음성 스트림 수신
+      // 게스트로부터 오는 음성 스트림 수신 (최초 한 번만)
       peerConnection.ontrack = (event) => {
         console.log("🎧 [HOST] 게스트 음성 트랙 수신:", event.track);
-        const remoteStream = new MediaStream([event.track]);
-        setWebRTCState((prev) => ({
-          ...prev,
-          remoteStream,
-        }));
-        setupAudioElement(remoteStream, { muted: true });
+        
+        setWebRTCState((prev) => {
+          // 이미 remoteStream이 있다면 스킵 (중복 호출 방지)
+          if (prev.remoteStream) {
+            return prev;
+          }
+          
+          const remoteStream = new MediaStream([event.track]);
+          setupAudioElement(remoteStream, { muted: true });
+          
+          return {
+            ...prev,
+            remoteStream,
+          };
+        });
       };
 
       // ICE candidate 처리

@@ -1,6 +1,6 @@
-import ConversationSpeaker from './ConversationSpeaker';
-import VoiceVisualizerSection from './VoiceVisualizerSection';
-import DebugInfo from './DebugInfo';
+import ConversationSpeaker from "./ConversationSpeaker";
+import VoiceVisualizerSection from "./VoiceVisualizerSection";
+import DebugInfo from "./DebugInfo";
 
 type Speaker = "guest" | "ai" | "none";
 
@@ -14,10 +14,10 @@ interface ConversationDisplayProps {
   microphoneLevel?: number;
 }
 
-export default function ConversationDisplay({ 
-  currentSpeaker, 
-  webRTCState, 
-  microphoneLevel 
+export default function ConversationDisplay({
+  currentSpeaker,
+  webRTCState,
+  microphoneLevel,
 }: ConversationDisplayProps) {
   if (webRTCState.connectionState !== "connected") {
     return null;
@@ -32,10 +32,10 @@ export default function ConversationDisplay({
         microphoneLevel={microphoneLevel}
       />
 
-      <DebugInfo
+      {/* <DebugInfo
         microphoneLevel={microphoneLevel}
         webRTCState={webRTCState}
-      />
+      /> */}
     </div>
   );
 }
